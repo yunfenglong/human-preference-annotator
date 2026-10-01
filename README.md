@@ -69,7 +69,7 @@ The upload script recovers all 227 MP4s (about 123 MiB) from Git commit `feae999
 
 ## CI deployment
 
-`.github/workflows/pages.yml` now deploys the Worker instead of the obsolete GitHub Pages frontend. Add these GitHub repository secrets:
+`.github/workflows/pages.yml` now deploys the Worker manually instead of publishing the obsolete GitHub Pages frontend. Add these GitHub repository secrets, then run **Deploy Cloudflare Worker** from the GitHub Actions page:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
