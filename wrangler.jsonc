@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "human-preference-annotator",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./frontend",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/videos/*", "/healthz"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "human-preference-annotator",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "VIDEOS",
+      "bucket_name": "human-preference-videos"
+    }
+  ]
+}

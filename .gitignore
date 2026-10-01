@@ -70,6 +70,8 @@ vite.config.ts.timestamp-*
 .env
 .env.*
 !.env.example
+.dev.vars
+.wrangler/
 
 # Project-specific
 # frontend/videos/

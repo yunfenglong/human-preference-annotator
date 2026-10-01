@@ -1,22 +1,23 @@
 {
-  "name": "human-preference-annotator-backend",
+  "name": "human-preference-annotator",
   "version": "1.0.0",
-  "description": "Backend API for Human Preference Annotator using Node.js, Express, and MongoDB.",
-  "main": "server.js",
+  "description": "Human Preference Annotator deployed as a Cloudflare Worker with D1 and R2.",
+  "type": "module",
+  "main": "worker/index.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:seed:local": "wrangler d1 execute DB --local --file ./seed.local.sql",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "check": "wrangler deploy --dry-run"
   },
-  "keywords": ["annotation", "express", "mongodb", "human-preference", "driving"],
+  "keywords": ["annotation", "cloudflare-workers", "d1", "r2", "human-preference", "driving"],
   "author": "Junkai Li",
   "license": "MIT",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.0",
-    "express": "^4.18.2",
-    "mongoose": "^8.3.1"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "wrangler": "^4.145.0"
   }
 }

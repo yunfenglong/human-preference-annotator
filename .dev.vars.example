@@ -1,0 +1,4 @@
+ADMIN_PASSWORD=choose-a-strong-local-password
+ADMIN_TOKEN=choose-a-long-random-local-token
+# Optional comma-separated origins when the frontend is hosted elsewhere.
+# CORS_ORIGIN=http://localhost:8000,https://example.com

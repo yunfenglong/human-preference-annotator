@@ -1,6 +1,11 @@
-// const API_BASE = "http://localhost:3000/api";
-const API_BASE = "https://human-preference-api.onrender.com/api";
+const API_BASE = "/api";
 let adminToken = "";
+
+function adminFetch(path, options = {}) {
+    const headers = new Headers(options.headers || {});
+    headers.set("X-Admin-Token", adminToken);
+    return fetch(`${API_BASE}${path}`, { ...options, headers });
+}
 
 const loginBtn = document.getElementById("loginBtn");
 const loginMsg = document.getElementById("loginMsg");
@@ -53,7 +58,7 @@ async function refreshAll() {
 
 async function fetchProgress() {
     if (progressMsg) progressMsg.textContent = "Loading...";
-    const res = await fetch(`${API_BASE}/admin/progress?token=${encodeURIComponent(adminToken)}`);
+    const res = await adminFetch("/admin/progress");
     if (!res.ok) {
         if (progressMsg) progressMsg.textContent = "Error";
         return;
@@ -82,7 +87,7 @@ async function fetchProgress() {
 
 async function fetchTokens() {
     if (tokensMsg) tokensMsg.textContent = "Loading...";
-    const res = await fetch(`${API_BASE}/admin/tokens?token=${encodeURIComponent(adminToken)}`);
+    const res = await adminFetch("/admin/tokens");
     if (!res.ok) {
         if (tokensMsg) tokensMsg.textContent = "Error";
         return;
@@ -141,7 +146,7 @@ async function fetchTokens() {
 }
 
 async function downloadAnnotations() {
-    const res = await fetch(`${API_BASE}/admin/export?token=${encodeURIComponent(adminToken)}`);
+    const res = await adminFetch("/admin/export");
     if (!res.ok) return alert("Error exporting");
     const data = await res.json();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -155,7 +160,7 @@ async function downloadAnnotations() {
 
 async function flushDatabase() {
     if (!confirm("This will DELETE ALL annotation and progress data. Continue?")) return;
-    const res = await fetch(`${API_BASE}/admin/flush?token=${encodeURIComponent(adminToken)}`, {
+    const res = await adminFetch("/admin/flush", {
         method: "POST",
     });
     alert(res.ok ? "Database flushed." : "Error.");
@@ -173,8 +178,8 @@ async function addAnnotator() {
         return;
     }
 
-    const res = await fetch(
-        `${API_BASE}/admin/add-annotator?token=${encodeURIComponent(adminToken)}`,
+    const res = await adminFetch(
+        "/admin/add-annotator",
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -193,8 +198,8 @@ async function addAnnotator() {
 }
 
 async function removeAnnotator(payload) {
-    const res = await fetch(
-        `${API_BASE}/admin/remove-annotator?token=${encodeURIComponent(adminToken)}`,
+    const res = await adminFetch(
+        "/admin/remove-annotator",
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -203,8 +208,10 @@ async function removeAnnotator(payload) {
     );
     if (res.ok) {
         alert("Removed.");
-        document.getElementById("removeAnnotatorId").value = "";
-        document.getElementById("removeToken").value = "";
+        const removeAnnotatorId = document.getElementById("removeAnnotatorId");
+        const removeToken = document.getElementById("removeToken");
+        if (removeAnnotatorId) removeAnnotatorId.value = "";
+        if (removeToken) removeToken.value = "";
         await fetchTokens();
     } else {
         alert("Error removing");
