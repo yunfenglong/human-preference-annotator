@@ -61,11 +61,11 @@ Apply the schema, upload videos, and deploy:
 
 ```bash
 npm run db:migrate:remote
-./scripts/upload_videos_to_r2.sh human-preference-videos feae999
+./scripts/upload_videos_to_r2.sh /path/to/video-directory-or-archive.tar human-preference-videos
 npm run deploy
 ```
 
-The upload script recovers all 227 MP4s (about 123 MiB) from Git commit `feae999` and uploads them under the exact `videos/...` keys used by the catalogues. It does not restore the files into the working tree.
+The repository history intentionally contains no MP4 files. Obtain the video directory or tar archive separately, outside Git. The upload script accepts either source and uploads all MP4s under the exact `videos/...` keys used by the catalogues.
 
 ## CI deployment
 
