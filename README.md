@@ -1,6 +1,12 @@
 # Human Preference Annotator
 
-A web tool for collecting side-by-side driving-video preference annotations. The production target is one Cloudflare Worker:
+A web tool for collecting blind stereoscopic A/B judgments for pixelMorph’s SK3 preference pipeline. The current entry point is `/study.html` (also reached from `/?token=...`).
+
+See [pixelMorph alignment and handoff](docs/pixelmorph-alignment.md) for verified task import, display requirements, response export and downstream DPO use. Before collection, import a real `TASKS.json` plus untouched `stimuli/`, agree the display protocol and question, and configure `SK_EXPORT_ID`. Collection stays disabled until that handoff is ready.
+
+The previous driving study is available at `/?legacy=1&token=...`; its data and optional surprise/attention steps are kept separate. `/admin/` manages viewer links and legacy data, while `/admin/study.html` delivers SK3 responses.
+
+The production target is one Cloudflare Worker:
 
 - Worker static assets serve `frontend/`.
 - Worker routes under `/api/*` replace Express.
@@ -21,6 +27,7 @@ The Worker expects these exact bindings and secrets:
 | `ADMIN_PASSWORD` | Secret | Password entered in `/admin/` |
 | `ADMIN_TOKEN` | Secret | Long random admin session token |
 | `CORS_ORIGIN` | Optional variable | Comma-separated extra frontend origins |
+| `SK_EXPORT_ID` | Variable | SHA-256 of verified SK3 `TASKS.json` |
 
 Cloudflare's products are named **D1** and **R2**. If “D2/R1” was used in discussion, confirm that it means these two services.
 
@@ -34,7 +41,7 @@ npm run db:seed:local
 npm run dev
 ```
 
-Open `http://localhost:8787/?token=ffb981fe` for the seeded annotator or `http://localhost:8787/admin/` for the admin dashboard. Local D1 and R2 data live under the ignored `.wrangler/` directory.
+After importing the SK3 handoff, open `http://localhost:8787/?token=ffb981fe` for the seeded annotator or `http://localhost:8787/admin/` for the admin dashboard. Local D1 and R2 data live under the ignored `.wrangler/` directory.
 
 `seed.local.sql` contains the three tokens previously committed in `backend/data/tokens.json`. It is deliberately not a migration, so those public development tokens are not inserted into production.
 
@@ -78,9 +85,36 @@ The API token needs scoped access to Workers, D1, and R2. CI applies D1 migratio
 
 ## Verification
 
+### Extended-display playback and optional steps
+
+Use desktop Chrome with displays in **Extend** mode. Open an annotator link,
+choose the video screen, allow window-management permission, and open the video
+window. Pop-ups must be allowed for this site. In the video window:
+
+- `1` replays the Up clip; `2` replays the Down clip. Only one plays at a time.
+- `ArrowUp` prefers Up; `ArrowDown` prefers Down; `C` selects Can't tell when enabled.
+- In Surprise, `ArrowUp`/`ArrowDown` selects the more surprising clip; `N` selects neither.
+- In Attention, `X` starts pause sampling. Click to mark points; Space/Enter
+  continues, `Z` undoes a point, and `C` clears the current points.
+
+Playback and annotation require native fullscreen. Exiting fullscreen pauses
+both videos and blocks answers. Press the currently selected video's number
+in the video window to reenter; an attention sample retains its time and marks.
+Esc remains available to exit fullscreen. A missing second display, denied
+permission, or unsupported browser does not fall back to windowed playback.
+
+The admin dashboard's **Annotation Settings** controls Can't tell, Surprise,
+and Attention independently. Settings persist in D1; disabled steps are skipped,
+and disabled fields are excluded from saved answers. Changes apply when the
+next pair loads or the annotator refreshes. All three features default to enabled.
+
+Run fullscreen/state regression checks with `node --test tests/presentation.test.cjs`.
+Hardware screen placement still needs verification on the intended dual-display setup.
+
 Before handing over or deploying, run:
 
 ```bash
+npm test
 npm run check
 ```
 
@@ -93,7 +127,7 @@ curl -sS -D - -o /dev/null -H 'Range: bytes=0-99' \
   'https://YOUR-WORKER.workers.dev/videos/gold/ego_video.mp4'
 ```
 
-The video request should return `206 Partial Content`. The admin dashboard can then generate fresh annotator links and export all annotations as JSON.
+The video request should return `206 Partial Content`. The admin dashboard can then generate fresh pseudonymous viewer links. Use `/admin/study.html` to export SK3 responses and retain the cursor after each successful downstream import.
 
 ## Existing MongoDB data
 

@@ -53,8 +53,43 @@ async function login() {
 }
 
 async function refreshAll() {
-    await Promise.all([fetchProgress(), fetchTokens()]);
+    await Promise.all([fetchProgress(), fetchTokens(), fetchSettings()]);
 }
+
+const settingKeys = ["cantTell", "surprise", "attention"];
+
+async function fetchSettings() {
+    const message = document.getElementById("settingsMsg");
+    try {
+        const response = await adminFetch("/admin/settings");
+        if (!response.ok) throw new Error("Could not load settings. Refresh to retry.");
+        const settings = await response.json();
+        settingKeys.forEach(key => {
+            const input = document.getElementById(`setting-${key}`);
+            input.checked = settings[key];
+            input.disabled = false;
+        });
+        document.getElementById("saveSettings").disabled = false;
+        message.textContent = "";
+    } catch (error) { message.textContent = error.message; }
+}
+
+document.getElementById("settingsForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = document.getElementById("saveSettings");
+    const message = document.getElementById("settingsMsg");
+    button.disabled = true;
+    message.textContent = "Saving…";
+    try {
+        const settings = Object.fromEntries(settingKeys.map(key => [key, document.getElementById(`setting-${key}`).checked]));
+        const response = await adminFetch("/admin/settings", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings),
+        });
+        if (!response.ok) throw new Error("Could not save settings. Try again.");
+        message.textContent = "Settings saved.";
+    } catch (error) { message.textContent = error.message; }
+    finally { button.disabled = false; }
+});
 
 async function fetchProgress() {
     if (progressMsg) progressMsg.textContent = "Loading...";

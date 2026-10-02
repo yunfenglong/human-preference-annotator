@@ -1,0 +1,148 @@
+/* Keep the original tool layout; apply the shared paper-and-ink theme. */
+body { margin: 0; }
+
+#topbar {
+  height: 64px;
+  padding: 0 32px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+#topbar-left { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+#topbar-center { font-size: 13px; font-variant-numeric: tabular-nums; }
+#progress { font-weight: 500; color: var(--muted); }
+
+#logoutBtn {
+  font-size: 12px;
+  padding: 7px 11px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+}
+#logoutBtn:hover { background: var(--surface); border-color: var(--muted); }
+
+#app { padding: 100px 24px 112px; }
+
+#question {
+  font-family: var(--font-sans);
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -.035em;
+  margin: 0 auto 12px;
+  max-width: 800px;
+  text-wrap: balance;
+}
+
+#status {
+  min-height: 1.5em;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 auto 26px;
+  max-width: 800px;
+}
+
+#setup {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+#setupInstructions {
+  white-space: pre-line;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.5;
+  max-width: 660px;
+  margin: 0 auto 18px;
+}
+
+#setup label { line-height: 1.6; }
+#setup input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; }
+
+#setup .screen-controls {
+  justify-content: center;
+  align-items: center;
+  margin: 18px 0 0;
+  gap: 8px;
+}
+
+#setup .screen-controls button,
+#setup .screen-controls select,
+#playbackControls button {
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#setup .screen-controls button:hover:enabled,
+#playbackControls button:hover:enabled { background: var(--surface); border-color: var(--muted); }
+
+#setup #openScreen {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+#setup #openScreen:hover:enabled { background: #35352f; }
+
+#playbackControls {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 24px 0 18px;
+}
+#playbackControls button { min-width: 100px; background: var(--surface); }
+button:disabled { opacity: .45; }
+
+#notes { text-align: center; padding: 0; margin: 0 auto; max-width: 800px; }
+#notes p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 2px 0; }
+#fixture { color: var(--muted); font-size: 11px; margin: 18px 0 0; }
+
+#buttons {
+  height: auto;
+  min-height: 80px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 24px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  backdrop-filter: none;
+}
+
+#buttons button {
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.4;
+}
+#buttons button:hover:enabled { background: var(--surface); border-color: var(--muted); }
+#buttons button[data-choice="A"],
+#buttons button[data-choice="B"] { color: var(--paper); background: var(--ink); border-color: var(--ink); min-width: 104px; }
+#buttons button[data-choice="A"]:hover:enabled,
+#buttons button[data-choice="B"]:hover:enabled { background: #35352f; }
+
+@media (max-width: 650px) {
+  #topbar { padding: 0 16px; gap: 8px; height: 60px; }
+  #topbar-left { max-width: 150px; font-size: 13px; }
+  #topbar-center { margin-left: auto; }
+  #topbar-right { margin-left: 6px; }
+  #topbar-right #logoutBtn { font-size: 11px; padding: 6px 8px; }
+  #app { padding: 88px 20px 210px; }
+  #setupInstructions { font-size: 16px; }
+  #buttons { padding: 12px; gap: 8px; }
+  #buttons button { font-size: 12px; padding: 9px 12px; }
+}

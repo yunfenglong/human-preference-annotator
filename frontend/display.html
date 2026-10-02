@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Annotation · Video display</title>
+  <link rel="stylesheet" href="display.css">
+</head>
+<body>
+  <main id="displayStage">
+    <div id="displayWelcome">
+      <p class="eyebrow">VIDEO DISPLAY</p>
+      <h1>One video.<br>Full attention.</h1>
+      <p id="displayMessage">Open this window from your annotation page.</p>
+      <div class="display-actions">
+        <button data-play="left"><kbd>1</kbd> Play Up</button>
+        <button data-play="right"><kbd>2</kbd> Play Down</button>
+      </div>
+      <p class="shortcuts">↑ Prefer Up &nbsp; ↓ Prefer Down <span id="cantTellHint">&nbsp; C Can't tell</span></p>
+    </div>
+    <span id="displayLabel" aria-live="polite"></span>
+  </main>
+  <script src="display.js"></script>
+</body>
+</html>

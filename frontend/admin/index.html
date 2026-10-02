@@ -17,8 +17,11 @@
     .success { color: #2e7d32; font-weight: 600; }
     .muted { color: #666; font-size: 12px; }
   </style>
+  <link rel="stylesheet" href="../theme.css">
+  <link rel="stylesheet" href="study.css">
 </head>
 <body>
+  <p><a href="/admin/study.html">SK3 study responses and incremental export</a></p>
   <h2>Annotation Admin Dashboard</h2>
 
   <section id="loginSection">
@@ -30,6 +33,17 @@
   </section>
 
   <section id="dash" style="display:none">
+    <section>
+      <h3>Annotation Settings</h3>
+      <form id="settingsForm">
+        <p><label><input type="checkbox" id="setting-cantTell" disabled> Show "Can't tell"</label></p>
+        <p><label><input type="checkbox" id="setting-surprise" disabled> Enable Surprise step</label></p>
+        <p><label><input type="checkbox" id="setting-attention" disabled> Enable Attention step</label></p>
+        <p class="muted">Disabled steps are skipped. Changes apply when annotators load the next pair or refresh.</p>
+        <button id="saveSettings" disabled>Save settings</button>
+        <span id="settingsMsg" class="muted" role="status" aria-live="polite"></span>
+      </form>
+    </section>
     <section>
       <h3>Annotator Progress</h3>
       <div class="row">

@@ -1,3 +1,4 @@
+import { handleStudy } from "./sk-labeling.js";
 import clipPairs from "../backend/data/clip_pairs.json";
 import goldPairs from "../backend/data/gold_pairs.json";
 
@@ -9,6 +10,11 @@ const ATTENTION_RATE = 1.0;
 
 const clipById = new Map(clipPairs.map((pair) => [pair.pair_id, pair]));
 const goldById = new Map(goldPairs.map((pair) => [pair.pair_id, pair]));
+
+async function getStudySettings(env) {
+  const row = await env.DB.prepare("SELECT cant_tell, surprise, attention FROM study_settings WHERE id = 1").first();
+  return { cantTell: Boolean(row.cant_tell), surprise: Boolean(row.surprise), attention: Boolean(row.attention) };
+}
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
@@ -173,6 +179,7 @@ async function serveNextPair(request, env) {
   const token = new URL(request.url).searchParams.get("token");
   const annotator = await getAnnotatorByToken(env, token);
   if (!annotator) return error("Invalid token", 403);
+  const settings = await getStudySettings(env);
 
   const due = await env.DB.prepare(
     `SELECT id, pair_id
@@ -194,6 +201,7 @@ async function serveNextPair(request, env) {
     if (deleted.meta.changes > 0 && pair) {
       return json({
         ...pair,
+        settings,
         progress: progress(annotator),
         _meta: { isRepeat: true, repeatOf: due.pair_id },
       });
@@ -217,6 +225,7 @@ async function serveNextPair(request, env) {
       .run();
     return json({
       ...pair,
+      settings,
       progress: progress(annotator),
       _meta: { isGold: true, expected: pair.expected },
     });
@@ -233,8 +242,9 @@ async function serveNextPair(request, env) {
 
   return json({
     ...pair,
+    settings,
     progress: progress(annotator),
-    _meta: { requireRegion: Math.random() < ATTENTION_RATE },
+    _meta: { requireRegion: settings.attention && Math.random() < ATTENTION_RATE },
   });
 }
 
@@ -266,10 +276,12 @@ async function saveAnnotation(request, env) {
   if (!['left', 'right', 'cant_tell'].includes(body.response)) {
     return error("response must be left, right, or cant_tell");
   }
+  const settings = await getStudySettings(env);
+  if (body.response === "cant_tell" && !settings.cantTell) return error("Can't tell is disabled for this study");
 
   let attention;
   try {
-    attention = coerceAttention(body.attention);
+    attention = settings.attention ? coerceAttention(body.attention) : null;
   } catch (caught) {
     return error(caught.message);
   }
@@ -284,10 +296,10 @@ async function saveAnnotation(request, env) {
         .bind(annotator.annotator_id, body.pairId)
         .first();
   const isRepeat = !isGold && Boolean(completed);
-  const surpriseChoice = coerceSurpriseChoice(body.surpriseChoice);
+  const surpriseChoice = settings.surprise ? coerceSurpriseChoice(body.surpriseChoice) : null;
   const stageDurations = coerceStageDurations(body.stageDurations);
-  const leftSurprise = coerceSurprise(body.left?.surprise);
-  const rightSurprise = coerceSurprise(body.right?.surprise);
+  const leftSurprise = settings.surprise ? coerceSurprise(body.left?.surprise) : null;
+  const rightSurprise = settings.surprise ? coerceSurprise(body.right?.surprise) : null;
 
   let presentedTime = null;
   if (body.presentedTime) {
@@ -395,6 +407,19 @@ async function handleAdmin(request, env, path) {
 
   if (!isAdmin(request, env)) return error("Forbidden", 403);
 
+  if (path === "/api/admin/settings") {
+    if (request.method === "GET") return json(await getStudySettings(env));
+    if (request.method === "POST") {
+      const body = await readBody(request);
+      if (!body || ["cantTell", "surprise", "attention"].some(key => typeof body[key] !== "boolean")) {
+        return error("cantTell, surprise, and attention must be booleans");
+      }
+      await env.DB.prepare("UPDATE study_settings SET cant_tell = ?1, surprise = ?2, attention = ?3 WHERE id = 1")
+        .bind(Number(body.cantTell), Number(body.surprise), Number(body.attention)).run();
+      return json(await getStudySettings(env));
+    }
+  }
+
   if (path === "/api/admin/progress" && request.method === "GET") {
     const result = await env.DB.prepare(
       `SELECT t.annotator_id, COALESCE(a.completed_count, 0) AS completed
@@ -476,6 +501,7 @@ async function handleAdmin(request, env, path) {
 
 async function handleApi(request, env) {
   const path = new URL(request.url).pathname;
+  if (path.startsWith("/api/study/") || path.startsWith("/api/admin/study/")) return handleStudy(request, env, isAdmin);
   if (path.startsWith("/api/admin/")) return handleAdmin(request, env, path);
   if (path === "/api/clip-pairs" && request.method === "GET") {
     return serveNextPair(request, env);

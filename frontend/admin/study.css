@@ -1,0 +1,24 @@
+/* Share the study theme while retaining the existing admin's form-and-table layout. */
+body { padding: 32px; max-width: 1000px; margin: 0 auto; font-size: 14px; line-height: 1.5; }
+h2 { margin: 24px 0 12px; font-size: 30px; font-weight: 600; letter-spacing: -.035em; }
+h3 { font-size: 17px; font-weight: 600; margin: 0 0 16px; }
+section { margin: 28px 0; }
+#operations > h3 { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+input, button { padding: 8px 12px; margin: 4px 0; border: 1px solid var(--line); border-radius: 5px; }
+input:not([type="checkbox"]) { background: var(--paper); color: var(--ink); }
+button { color: var(--ink); background: transparent; font-size: 13px; }
+button:hover:enabled { background: var(--surface); border-color: var(--muted); }
+button:disabled { opacity: .45; }
+#signIn, #download, #loginBtn { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+#signIn:hover:enabled, #download:hover:enabled, #loginBtn:hover:enabled { background: #35352f; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--muted); font-size: 12px; }
+#identity { overflow-wrap: anywhere; }
+pre { overflow-x: auto; background: var(--surface); padding: 16px; border-radius: 5px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+th, td { border: 1px solid var(--line); padding: 10px; text-align: left; }
+th { background: var(--surface); font-size: 12px; font-weight: 600; }
+.danger { background: #f4e5df; border: 1px solid #dbc0b4; padding: 16px; }
+.danger button { color: #9c3e25; }
+.success { color: #476249; font-weight: 500; }
+@media (max-width: 650px) { body { padding: 20px; } h2 { font-size: 26px; } }

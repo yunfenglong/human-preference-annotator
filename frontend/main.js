@@ -23,6 +23,37 @@ let awaitingRegion = false;
 let pendingChoice = null;
 let decisionAtMs = null;
 let regionTimeoutId = null;
+let submitting = false;
+let pairLoading = true;
+let studySettings = { cantTell: true, surprise: true, attention: true };
+let attentionCleanup = null;
+
+const presentation = new ExternalPresentation({
+    onPlayback: () => { presentedTime ||= new Date(); },
+    canSwitch: side => Boolean(currentPair && !pairLoading && !submitting &&
+        (!psActive || side === presentation.selected)),
+    isSampling: () => psActive,
+    isCollecting: () => awaitingRegion,
+    onClose: () => {
+        const wasSampling = psActive;
+        cancelPauseSampling();
+        if (wasSampling) renderStepUI();
+    },
+    onChange: () => updateAnnotationAvailability(),
+});
+window.connectPresentation = popup => presentation.connect(popup);
+const getVideo = side => presentation.videos[side];
+const removeVideoOverlay = id => {
+    Object.values(presentation.wrappers).forEach(wrap => wrap.querySelector(`#${id}`)?.remove());
+};
+
+function updateAnnotationAvailability() {
+    const enabled = presentation.canAnnotate() && !submitting && !pairLoading;
+    document.querySelectorAll('#buttons button').forEach(button => {
+        button.disabled = !enabled || (psActive && (button.id === 'startPS' || button.id === 'skipPS'));
+    });
+}
+
 
 // Pause-sampling (PS) lifecycle control
 let psAbort = null; // AbortController used to fence all PS listeners
@@ -36,9 +67,10 @@ function cancelPauseSampling() {
     psAbort = null;
     psActive = false;
     awaitingRegion = false;
+    attentionCleanup?.();
     // remove any lingering overlays
-    document.getElementById("multiOverlay")?.remove();
-    document.getElementById("pointOverlay")?.remove();
+    removeVideoOverlay("multiOverlay");
+    removeVideoOverlay("pointOverlay");
 }
 
 // 3-step annotation state (Preference, Surprise, Attention)
@@ -63,7 +95,10 @@ function updateTopStepper(activeStepIdx = 0) {
     const el = ensureTopStepperEl();
     if (!el) return;
 
-    const steps = STEP_LABELS.map((label, idx) => {
+    const enabledSteps = activeStudySteps(studySettings);
+    activeStepIdx = enabledSteps.indexOf(activeStepIdx);
+    const steps = enabledSteps.map((stepId, idx) => {
+        const label = STEP_LABELS[stepId];
         const status = idx < activeStepIdx ? "done" : idx === activeStepIdx ? "active" : "todo";
         const circleBg =
             status === "done" ? "#2ecc71" : status === "active" ? "#2980b9" : "#d0d7de";
@@ -84,7 +119,7 @@ function updateTopStepper(activeStepIdx = 0) {
           ${label}
         </div>
         ${
-            idx < STEP_LABELS.length - 1
+            idx < enabledSteps.length - 1
                 ? `<div style="flex:1;height:2px;background:${connectorColor};margin:0 14px 0 0;border-radius:2px;">\u00A0\u00A0</div>`
                 : ``
         }
@@ -113,78 +148,47 @@ function resetStepperForPair() {
     };
     renderStepUI();
     updateTopStepper(0);
+    updateAnnotationAvailability();
 }
 
 function markStepAdvance(nextStep) {
+    if (!presentation.requireFullscreen() || submitting || pairLoading) return;
     const now = Date.now();
     staged.stepDurations[step] = (staged.stepDurations[step] || 0) + (now - (staged.stepT0 || now));
     step = nextStep;
     staged.stepT0 = now;
     renderStepUI();
     updateTopStepper(nextStep);
+    updateAnnotationAvailability();
+}
+
+function advanceStudyStep() {
+    const next = nextStudyStep(studySettings, step);
+    if (next === null) submitStagedAnnotation();
+    else markStepAdvance(next);
 }
 
 function renderStepUI() {
     const notes = document.getElementById("notes");
     const buttons = document.getElementById("buttons");
     const chosen = staged?.preference;
-    const stepName =
-        step === STEPS.PREF
-            ? "Step 1/3: Preference"
-            : step === STEPS.SURPRISE
-            ? "Step 2/3: Surprise"
-            : "Step 3/3: Attention";
     notes.innerHTML =
         // `<p id="instructions"><strong>${stepName}</strong></p>` +
         step === STEPS.PREF
-            ? `<p id="instructions">Choose the clip you prefer (ArrowLeft = Up, ArrowRight = Down, ArrowDown = Can't tell).</p>`
+            ? `<p id="instructions">Press 1 or 2 to watch. Choose your preference: ↑ = Up, ↓ = Down${studySettings.cantTell ? ", C = Can't tell" : ""}.</p>`
             : step === STEPS.SURPRISE
-            ? `<p id="instructions">Rate how <em>surprising</em> each clip felt (1 = not at all, 5 = very). Hotkeys: 1-5 for Up, Q-T for Down.</p>`
+            ? `<p id="instructions">Which clip surprised you more? ↑ = Up, ↓ = Down, N = No surprising event. Press 1 or 2 to replay.</p>`
             : `<p id="instructions">Mark the spot that drove your choice on the <b>${
                   chosen === "left" ? "Up" : "Down"
               }</b> clip. Press X to place (or click the video). Esc cancels.</p>`;
 
     if (step === STEPS.PREF) {
         buttons.innerHTML = `
-      <button onclick="handleChoice('left')">Prefer Up</button>
-      <button onclick="handleChoice('right')">Prefer Down</button>
-      <button onclick="handleChoice('cant_tell')">Can't Tell</button>`;
+      <button onclick="handleChoice('left')">↑ Prefer Up</button>
+      <button onclick="handleChoice('right')">↓ Prefer Down</button>
+      ${studySettings.cantTell ? '<button onclick="handleChoice(\'cant_tell\')">C Can\'t Tell</button>' : ''}`;
     }
 
-    // else if (step === STEPS.SURPRISE) {
-    //     buttons.innerHTML = `
-    //   <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-    //     <div><div style="font-weight:600;margin-bottom:4px">Up clip</div>
-    //       ${[1, 2, 3, 4, 5]
-    //           .map((v) => `<button data-side="left" data-val="${v}" class="surBtn">${v}</button>`)
-    //           .join(" ")}
-    //       <span id="leftSurVal" style="margin-left:8px; margin-right: 18px;">${staged.surprise.left ?? "-"}</span>
-    //     </div>
-    //     <div><div style="font-weight:600;margin-bottom:4px">Down clip</div>
-    //       ${[1, 2, 3, 4, 5]
-    //           .map((v) => `<button data-side="right" data-val="${v}" class="surBtn">${v}</button>`)
-    //           .join(" ")}
-    //       <span id="rightSurVal" style="margin-left:8px; margin-right: 18px;">${staged.surprise.right ?? "-"}</span>
-    //     </div>
-    //     <div><button id="surpriseNext" disabled>Next</button></div>
-    //   </div>`;
-    //     buttons.querySelectorAll(".surBtn").forEach((b) => {
-    //         b.addEventListener("click", () => {
-    //             const side = b.dataset.side,
-    //                 val = Number(b.dataset.val);
-    //             staged.surprise[side] = val;
-    //             document.getElementById(
-    //                 side === "left" ? "leftSurVal" : "rightSurVal"
-    //             ).textContent = val;
-    //             buttons.querySelector("#surpriseNext").disabled = !(
-    //                 staged.surprise.left && staged.surprise.right
-    //             );
-    //         });
-    //     });
-    //     buttons
-    //         .querySelector("#surpriseNext")
-    //         .addEventListener("click", () => markStepAdvance(STEPS.ATTENTION));
-    // }
     else if (step === STEPS.SURPRISE) {
         buttons.innerHTML = `
             <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -231,17 +235,17 @@ function renderStepUI() {
         document.getElementById("surL").addEventListener("click", () => {
             staged.surpriseChoice = "left";
             // updateNext();
-            markStepAdvance(STEPS.ATTENTION);
+            advanceStudyStep();
         });
         document.getElementById("surR").addEventListener("click", () => {
             staged.surpriseChoice = "right";
             // updateNext();
-            markStepAdvance(STEPS.ATTENTION);
+            advanceStudyStep();
         });
         document.getElementById("surNone").addEventListener("click", () => {
             staged.surpriseChoice = "none";
             // updateNext();
-            markStepAdvance(STEPS.ATTENTION);
+            advanceStudyStep();
         });
 
         const adv = document.getElementById("advWrap");
@@ -262,49 +266,8 @@ function renderStepUI() {
         });
 
         document.getElementById("surpriseNext").addEventListener("click", () => {
-            if (canNext()) markStepAdvance(STEPS.ATTENTION);
+            if (canNext()) advanceStudyStep();
         });
-        // } else if (step === STEPS.ATTENTION) {
-        //     buttons.innerHTML = `
-        //   <button id="markPointBtn">Mark attention on ${chosen === "left" ? "Up" : "Down"} (X)</button>
-        //   ${
-        //       requireRegion && (chosen === "left" || chosen === "right")
-        //           ? ""
-        //           : '<button id="submitNoPoint">Submit without point</button>'
-        //   }
-        // `;
-        //     const side = chosen;
-        //     const go = () => {
-        //         showPointOverlay(side, (pt) => {
-        //             if (pt) {
-        //                 staged.attention = {
-        //                     type: "point",
-        //                     side,
-        //                     x: pt.x,
-        //                     y: pt.y,
-        //                     coordSpace: "normalised",
-        //                     decisionAtMs: staged.decisionAtMs,
-        //                 };
-        //             } else {
-        //                 staged.attention = {
-        //                     type: "point",
-        //                     side,
-        //                     skipped: true,
-        //                     decisionAtMs: staged.decisionAtMs,
-        //                 };
-        //             }
-        //             submitStagedAnnotation();
-        //         });
-        //     };
-        //     document.getElementById("markPointBtn").addEventListener("click", go);
-        //     const skipBtn = document.getElementById("submitNoPoint");
-        //     if (skipBtn)
-        //         skipBtn.addEventListener("click", () => {
-        //             staged.attention = null;
-        //             submitStagedAnnotation();
-        //         });
-        //     if (requireRegion && (side === "left" || side === "right")) setTimeout(go, 50); // auto-open if required
-        // }
     } else if (step === STEPS.ATTENTION) {
         const side = staged?.preference; // "left" | "right"
         const label = side === "left" ? "Up" : "Down";
@@ -314,6 +277,7 @@ function renderStepUI() {
       <button id="skipPS">Skip (no attention)</button>
     `;
         document.getElementById("startPS").addEventListener("click", () => {
+            if (!presentation.requireFullscreen() || psActive) return;
             document.getElementById("startPS").disabled = true;
             document.getElementById("skipPS").disabled = true;
             startPauseSampling(side, (attention) => {
@@ -329,7 +293,7 @@ function renderStepUI() {
 }
 
 function updateProgress(video, bar) {
-    const percentage = (video.currentTime / video.duration) * 100;
+    const percentage = video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0;
     bar.style.width = `${percentage}%`;
     const vidProgressElm = document.getElementById("videoStatus");
     if (vidProgressElm && percentage > 85) {
@@ -340,40 +304,19 @@ function updateProgress(video, bar) {
 }
 
 function attachProgress(videoId, barId) {
-    const video = document.getElementById(videoId);
-    const bar = document.getElementById(barId);
+    const side = videoId === "leftVideo" ? "left" : "right";
+    const video = getVideo(side);
+    const bar = presentation.bars[side];
     video.addEventListener("timeupdate", () => updateProgress(video, bar));
-}
-
-function showStartOverlay(onStart) {
-    let overlay = document.getElementById("startOverlay");
-    if (!overlay) {
-        overlay = document.createElement("div");
-        overlay.id = "startOverlay";
-        overlay.style =
-            "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;cursor:pointer;";
-        overlay.innerHTML =
-            '<div style="padding:12px 16px;background:#fff;border-radius:8px;font:600 14px system-ui;">Click or press Space to start playback</div>';
-        document.body.appendChild(overlay);
-    }
-    const start = () => {
-        overlay.removeEventListener("click", start);
-        window.removeEventListener("keydown", onKey);
-        overlay.remove();
-        onStart();
-    };
-    const onKey = (e) => {
-        if (e.key === " " || e.code === "Space" || e.key === "Spacebar") {
-            e.preventDefault();
-            start();
-        }
-    };
-    overlay.addEventListener("click", start, { once: true });
-    window.addEventListener("keydown", onKey, { once: true });
 }
 
 function renderPair(pair) {
     currentPair = pair;
+    studySettings = pair.settings;
+    presentation.cantTell = studySettings.cantTell;
+    document.getElementById("cantTellHint").hidden = !studySettings.cantTell;
+    const popupHint = presentation.popup?.document.getElementById("cantTellHint");
+    if (popupHint) popupHint.hidden = !studySettings.cantTell;
     annotatorId = pair.progress?.annotatorId || "anonymous";
     document.getElementById("annotatorIdDisplay").innerText = `Annotator ID: ${annotatorId}`;
     requireRegion = !!pair._meta?.requireRegion;
@@ -386,54 +329,23 @@ function renderPair(pair) {
         "progress"
     ).innerText = `Progress: ${pair.progress.completed}/${pair.progress.total} pairs`;
 
-    const leftVideo = document.getElementById("leftVideo");
-    const rightVideo = document.getElementById("rightVideo");
+    const leftVideo = getVideo("left");
+    const rightVideo = getVideo("right");
 
-    // autoplay setup
-    leftVideo.muted = true;
-    rightVideo.muted = true;
-    leftVideo.setAttribute("muted", "");
-    rightVideo.setAttribute("muted", "");
-    leftVideo.setAttribute("playsinline", "");
-    rightVideo.setAttribute("playsinline", "");
-    leftVideo.autoplay = true;
-    rightVideo.autoplay = true;
-    leftVideo.preload = "auto";
-    rightVideo.preload = "auto";
-
-    leftVideo.src = pair.left_clip;
-    rightVideo.src = pair.right_clip;
-
-    leftVideo.load();
-    rightVideo.load();
-
-    // try autoplay. If blocked, show overlay and start on user gesture.
-    const tryAutoplay = async () => {
-        try {
-            await Promise.all([leftVideo.play(), rightVideo.play()]);
-            presentedTime = new Date();
-        } catch (e) {
-            showStartOverlay(async () => {
-                await Promise.allSettled([leftVideo.play(), rightVideo.play()]);
-                presentedTime = new Date();
-            });
-        }
-    };
-    const maybeStart = () => {
-        if (leftVideo.readyState >= 3 && rightVideo.readyState >= 3) {
-            tryAutoplay();
-            leftVideo.removeEventListener("canplay", maybeStart);
-            rightVideo.removeEventListener("canplay", maybeStart);
-        }
-    };
-    leftVideo.addEventListener("canplay", maybeStart);
-    rightVideo.addEventListener("canplay", maybeStart);
-
-    leftVideo.loop = true;
-    rightVideo.loop = true;
-    leftVideo.controls = true;
-    rightVideo.controls = true;
-
+    presentation.resetPair();
+    presentedTime = null;
+    for (const [side, video] of Object.entries(presentation.videos)) {
+        video.muted = true;
+        video.autoplay = false;
+        video.loop = true;
+        video.controls = false;
+        video.preload = "auto";
+        // Absolute URLs keep the same source when adopted into the display document.
+        video.src = new URL(side === "left" ? pair.left_clip : pair.right_clip, location.href).href;
+        video.load();
+        presentation.bars[side].style.width = "0%";
+    }
+    pairLoading = false;
     resetStepperForPair();
 }
 
@@ -446,134 +358,21 @@ function getNormalisedCoords(evt, el) {
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
 }
 
-function showPointOverlay(side, onPick) {
-    awaitingRegion = true;
-    const video = document.getElementById(side === "left" ? "leftVideo" : "rightVideo");
-
+// Place marks on the actual image, excluding the letterbox bars.
+function positionVideoOverlay(overlay, video) {
     const wrap = video.parentElement;
-    wrap.style.position = wrap.style.position || "relative";
-
-    const overlay = document.createElement("div");
-    overlay.id = "pointOverlay";
-    overlay.style.position = "absolute";
-    overlay.style.inset = "0";
-    overlay.style.cursor = "crosshair";
-    overlay.style.zIndex = "10";
-    overlay.style.background = "rgba(0,0,0,0.12)";
-    overlay.style.backdropFilter = "blur(0px)";
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-label", "Pick a point of attention");
-
-    // crosshair
-    const marker = document.createElement("div");
-    marker.style.position = "absolute";
-    marker.style.width = "14px";
-    marker.style.height = "14px";
-    marker.style.transform = "translate(-50%, -50%)";
-    marker.style.pointerEvents = "none";
-    marker.style.borderRadius = "50%";
-    marker.style.border = "2px solid #fff";
-    marker.style.boxShadow = "0 1px 2px rgba(0,0,0,.6)";
-    overlay.appendChild(marker);
-
-    // hint
-    const hint = document.createElement("div");
-    hint.textContent = "Click or tap to mark attention point (Esc to cancel)";
-    hint.style.position = "absolute";
-    hint.style.left = "50%";
-    hint.style.bottom = "8px";
-    hint.style.transform = "translateX(-50%)";
-    hint.style.padding = "6px 10px";
-    hint.style.background = "rgba(0,0,0,0.6)";
-    hint.style.color = "#fff";
-    hint.style.borderRadius = "6px";
-    hint.style.font = "600 12px system-ui";
-    overlay.appendChild(hint);
-
-    let lastXY = null;
-    const move = (evt) => {
-        const { x, y } = getNormalisedCoords(evt, wrap);
-        lastXY = { x, y };
-        marker.style.left = `${x * 100}%`;
-        marker.style.top = `${y * 100}%`;
-    };
-
-    const pick = (evt) => {
-        evt.preventDefault();
-        const ping = document.createElement("div");
-        ping.style.position = "absolute";
-        ping.style.left = marker.style.left;
-        ping.style.top = marker.style.top;
-        ping.style.width = "0px";
-        ping.style.height = "0px";
-        ping.style.border = "2px solid #fff";
-        ping.style.borderRadius = "50%";
-        ping.style.opacity = "0.9";
-        ping.style.transform = "translate(-50%, -50%)";
-        overlay.appendChild(ping);
-        ping.animate(
-            [
-                { width: "0px", height: "0px", opacity: 0.9 },
-                { width: "36px", height: "36px", opacity: 0.0 },
-            ],
-            { duration: 250, easing: "ease-out" }
-        ).onfinish = () => ping.remove();
-
-        cleanup();
-        // Compute from the actual event in case there was no prior move.
-        const { x, y } = getNormalisedCoords(evt, wrap);
-        onPick({ x, y });
-    };
-
-    const cancel = () => {
-        cleanup();
-        onPick(null);
-    };
-
-    const onKey = (evt) => {
-        if (evt.key === "Escape") {
-            evt.preventDefault();
-            cancel();
-        }
-    };
-
-    // Attach listeners
-    overlay.addEventListener("mousemove", move);
-    overlay.addEventListener("touchmove", move, { passive: true });
-    overlay.addEventListener("click", pick);
-    overlay.addEventListener(
-        "touchstart",
-        (evt) => {
-            move(evt);
-        },
-        { passive: true }
-    );
-    overlay.addEventListener(
-        "touchend",
-        (evt) => {
-            pick(evt.changedTouches?.[0] ?? evt);
-        },
-        { passive: false }
-    );
-    window.addEventListener("keydown", onKey);
-
-    wrap.appendChild(overlay);
-
-    // Timeout failsafe
-    if (regionTimeoutId) clearTimeout(regionTimeoutId);
-    regionTimeoutId = setTimeout(() => {
-        cancel();
-    }, ATTN_TIMEOUT);
-
-    function cleanup() {
-        if (regionTimeoutId) {
-            clearTimeout(regionTimeoutId);
-            regionTimeoutId = null;
-        }
-        window.removeEventListener("keydown", onKey);
-        overlay.remove();
-        awaitingRegion = false;
-    }
+    const frame = video.getBoundingClientRect();
+    const parent = wrap.getBoundingClientRect();
+    const scale = Math.min(frame.width / video.videoWidth, frame.height / video.videoHeight);
+    const width = video.videoWidth * scale;
+    const height = video.videoHeight * scale;
+    Object.assign(overlay.style, {
+        inset: "auto",
+        left: `${frame.left - parent.left + (frame.width - width) / 2}px`,
+        top: `${frame.top - parent.top + (frame.height - height) / 2}px`,
+        width: `${width}px`,
+        height: `${height}px`,
+    });
 }
 
 /**
@@ -584,12 +383,12 @@ function showPointOverlay(side, onPick) {
  */
 function showMultiPointCollector(side, onDone) {
     awaitingRegion = true;
-    const video = document.getElementById(side === "left" ? "leftVideo" : "rightVideo");
+    const video = getVideo(side);
     const wrap = video.parentElement;
     wrap.style.position = wrap.style.position || "relative";
 
     // Ensure only one overlay at a time
-    document.getElementById("multiOverlay")?.remove();
+    removeVideoOverlay("multiOverlay");
 
     const overlay = document.createElement("div");
     overlay.id = "multiOverlay";
@@ -634,7 +433,8 @@ function showMultiPointCollector(side, onDone) {
     };
 
     const click = (evt) => {
-        const { x, y } = getNormalisedCoords(evt, wrap);
+        if (!presentation.isFullscreen()) return;
+        const { x, y } = getNormalisedCoords(evt, overlay);
         points.push({ x, y });
         addMarker(x, y);
     };
@@ -648,10 +448,12 @@ function showMultiPointCollector(side, onDone) {
         while (markers.length) markers.pop().remove();
     };
     const finish = () => {
+        if (!presentation.isFullscreen()) return;
         cleanup();
         onDone(points.slice());
     };
     const onKey = (e) => {
+        if (!presentation.isFullscreen()) return;
         if (e.key === "z" || e.key === "Z") {
             e.preventDefault();
             undo();
@@ -661,17 +463,20 @@ function showMultiPointCollector(side, onDone) {
         } else if (e.key === " " || e.key === "Enter") {
             e.preventDefault();
             finish();
-        } else if (e.key === "Escape") {
-            e.preventDefault();
-            finish();
         }
     };
 
     overlay.addEventListener("click", click);
     window.addEventListener("keydown", onKey);
     wrap.appendChild(overlay);
+    positionVideoOverlay(overlay, video);
+    const resizeOverlay = () => positionVideoOverlay(overlay, video);
+    video.ownerDocument.defaultView.addEventListener("resize", resizeOverlay);
+    attentionCleanup = cleanup;
 
     function cleanup() {
+        video.ownerDocument.defaultView.removeEventListener("resize", resizeOverlay);
+        if (attentionCleanup === cleanup) attentionCleanup = null;
         window.removeEventListener("keydown", onKey);
         overlay.remove();
         awaitingRegion = false;
@@ -684,8 +489,16 @@ function showMultiPointCollector(side, onDone) {
  * All listeners are attached with an AbortController to guarantee teardown.
  */
 function startPauseSampling(side, onDone) {
-    const chosenVideo = document.getElementById(side === "left" ? "leftVideo" : "rightVideo");
-    const otherVideo = document.getElementById(side === "left" ? "rightVideo" : "leftVideo");
+    if (!presentation.requireFullscreen()) return;
+    if (getVideo(side).readyState < 2 || getVideo(side).error) {
+        presentation.setStatus("Watch the preferred video before starting attention marks. If it cannot play, contact the administrator.");
+        renderStepUI();
+        updateAnnotationAvailability();
+        return;
+    }
+    presentation.select(side);
+    const chosenVideo = getVideo(side);
+    const otherVideo = getVideo(side === "left" ? "right" : "left");
 
     // Ensure previous sessions are fully stopped
     cancelPauseSampling();
@@ -711,7 +524,7 @@ function startPauseSampling(side, onDone) {
 
     const ensurePlaying = async () => {
         try {
-            await chosenVideo.play();
+            if (presentation.isFullscreen() && !awaitingRegion) await chosenVideo.play();
         } catch (_) {}
     };
 
@@ -753,7 +566,7 @@ function startPauseSampling(side, onDone) {
     };
 
     const onTime = () => {
-        if (!psActive || signal.aborted || !armed || idx >= breaks.length) return;
+        if (!psActive || signal.aborted || !presentation.isFullscreen() || !armed || idx >= breaks.length) return;
         const nowMs = Math.floor(chosenVideo.currentTime * 1000);
         const target = breaks[idx];
         if (nowMs >= target) {
@@ -776,8 +589,10 @@ function startPauseSampling(side, onDone) {
 }
 
 function handleChoice(response) {
-    const leftVideo = document.getElementById("leftVideo");
-    const rightVideo = document.getElementById("rightVideo");
+    if (step !== STEPS.PREF || submitting || pairLoading || !presentation.requireFullscreen()) return;
+    if (response === "cant_tell" && !studySettings.cantTell) return;
+    const leftVideo = getVideo("left");
+    const rightVideo = getVideo("right");
     const chosenVideo = response === "left" ? leftVideo : response === "right" ? rightVideo : null;
 
     pendingChoice = response;
@@ -794,15 +609,23 @@ function handleChoice(response) {
         submitStagedAnnotation();
         return;
     }
-    markStepAdvance(STEPS.SURPRISE);
+    advanceStudyStep();
 }
 
 async function loadNextPair() {
+    pairLoading = true;
+    presentation.resetPair();
     cancelPauseSampling();
-    document.getElementById("multiOverlay")?.remove();
-    document.getElementById("pointOverlay")?.remove();
-    const res = await fetch(`${API_BASE}/clip-pairs?token=${token}`);
+    removeVideoOverlay("multiOverlay");
+    removeVideoOverlay("pointOverlay");
+    let res;
+    try { res = await fetch(`${API_BASE}/clip-pairs?token=${token}`); }
+    catch {
+        presentation.setStatus("Could not load the next pair. Check your connection and refresh to retry.");
+        return;
+    }
     if (!res.ok) {
+        presentation.close();
         if (res.status === 403) {
             document.getElementById("app").innerHTML =
                 "<h2>Invalid token. Please check your link or contact the administrator.</h2>";
@@ -815,37 +638,12 @@ async function loadNextPair() {
 
     const data = await res.json();
     if (!data) {
+        presentation.close();
         document.getElementById("app").innerHTML = "<h2>All annotations complete. Thank you!</h2>";
         return;
     }
     renderPair(data);
 }
-
-// For compatibility
-// async function submitResponse(response, attention) {
-//     cancelPauseSampling();
-//     const now = new Date();
-//     const responseTimeMs = presentedTime ? now - presentedTime : undefined;
-//     await fetch(`${API_BASE}/annotate`, {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify({
-//             token,
-//             pairId: currentPair.pair_id,
-//             response,
-//             surpriseChoice: staged.surpriseChoice,
-//             left: { url: currentPair.left_clip },
-//             right: { url: currentPair.right_clip },
-//             presentedTime,
-//             responseTimeMs,
-//             isGold: currentPair._meta?.isGold || false,
-//             isRepeat: currentPair._meta?.isRepeat || false,
-//             repeatOf: currentPair._meta?.repeatOf,
-//             attention,
-//         }),
-//     });
-//     loadNextPair();
-// }
 
 window.onload = () => {
     loadNextPair();
@@ -854,6 +652,9 @@ window.onload = () => {
 };
 
 async function submitStagedAnnotation() {
+    if (submitting || pairLoading || !presentation.requireFullscreen()) return;
+    submitting = true;
+    updateAnnotationAvailability();
     cancelPauseSampling();
     // close current step timing
     if (staged) {
@@ -870,7 +671,9 @@ async function submitStagedAnnotation() {
     const nowDate = new Date();
     const responseTimeMs = presentedTime ? nowDate - presentedTime : undefined;
 
-    await fetch(`${API_BASE}/annotate`, {
+    let result;
+    try {
+        result = await fetch(`${API_BASE}/annotate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -889,84 +692,48 @@ async function submitStagedAnnotation() {
             stageDurations, // optional; backend can ignore
         }),
     });
+    } catch {
+        // Retain staged answers for retry.
+    }
+    submitting = false;
+    if (!result?.ok) {
+        presentation.setStatus("Could not save your annotation. Please try again.");
+        if (!document.getElementById("retrySave")) {
+            const retry = document.createElement("button");
+            retry.id = "retrySave";
+            retry.textContent = "Retry saving annotation";
+            retry.addEventListener("click", submitStagedAnnotation);
+            document.getElementById("buttons").appendChild(retry);
+        }
+        updateAnnotationAvailability();
+        return;
+    }
     loadNextPair();
 }
 
-// Keyboard shortcuts: LEFT prefer left, RIGHT prefer right, DOWN means can't tell
-(function setupKeyboardShortcuts() {
-    const isTextInput = (el) =>
-        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-
-    window.addEventListener(
-        "keydown",
-        (e) => {
-            if (e.repeat) return;
-            if (isTextInput(document.activeElement) || e.isComposing) return;
-            if (awaitingRegion) return;
-
-            if (step === undefined || step === STEPS.PREF) {
-                if (e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    handleChoice("left");
-                } else if (e.key === "ArrowRight") {
-                    e.preventDefault();
-                    handleChoice("right");
-                } else if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    handleChoice("cant_tell");
-                }
-            } else if (step === STEPS.SURPRISE) {
-                const leftMap = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 };
-                const rightMap = { q: 1, w: 2, e: 3, r: 4, t: 5, Q: 1, W: 2, E: 3, R: 4, T: 5 };
-
-                if (e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    staged.surpriseChoice = "left";
-                    markStepAdvance(STEPS.ATTENTION);
-                    return;
-                } else if (e.key === "ArrowRight") {
-                    e.preventDefault();
-                    staged.surpriseChoice = "right";
-                    markStepAdvance(STEPS.ATTENTION);
-                    return;
-                } else if (e.key === "n" || e.key === "N") {
-                    e.preventDefault();
-                    staged.surpriseChoice = "none";
-                    markStepAdvance(STEPS.ATTENTION);
-                    return;
-                } else if (leftMap[e.key] != null) {
-                    staged.surprise.left = leftMap[e.key];
-                    const s = document.getElementById("leftSurVal");
-                    if (s) s.textContent = staged.surprise.left;
-                } else if (rightMap[e.key] != null) {
-                    staged.surprise.right = rightMap[e.key];
-                    const s = document.getElementById("rightSurVal");
-                    if (s) s.textContent = staged.surprise.right;
-                } else if (e.key === "Enter") {
-                    // fall through to next if we have a choice
-                }
-
-                const nextBtn = document.getElementById("surpriseNext");
-                const canNext = !!staged.surpriseChoice;
-                if (nextBtn) nextBtn.disabled = !canNext;
-                if (canNext && e.key === "Enter") {
-                    e.preventDefault();
-                    markStepAdvance(STEPS.ATTENTION);
-                }
-            } else if (step === STEPS.ATTENTION) {
-                if (e.key === "x" || e.key === "X") {
-                    e.preventDefault();
-                    const btn = document.getElementById("markPointBtn");
-                    if (btn) btn.click();
-                } else if (e.key === "Enter") {
-                    const skip = document.getElementById("submitNoPoint");
-                    if (skip) {
-                        e.preventDefault();
-                        skip.click();
-                    }
-                }
-            }
-        },
-        { passive: false }
-    );
-})();
+// Both windows share shortcuts; 1 / 2 always select playback, never ratings.
+window.addEventListener("keydown", event => {
+    if (event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+    const el = document.activeElement;
+    if (el?.matches("input, textarea, select, [contenteditable=true]")) return;
+    if (event.key === "1" || event.key === "2") {
+        event.preventDefault();
+        presentation.play(event.key === "1" ? "left" : "right");
+        return;
+    }
+    if (awaitingRegion || pairLoading || submitting) return;
+    if (step === STEPS.PREF) {
+        if (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key.toLowerCase() === "c") {
+            event.preventDefault();
+            if (event.key.toLowerCase() === "c" && !studySettings.cantTell) return;
+            handleChoice(event.key === "ArrowUp" ? "left" : event.key === "ArrowDown" ? "right" : "cant_tell");
+        }
+    } else if (step === STEPS.SURPRISE) {
+        const id = event.key === "ArrowUp" ? "surL" : event.key === "ArrowDown" ? "surR" :
+            event.key.toLowerCase() === "n" ? "surNone" : null;
+        if (id) { event.preventDefault(); document.getElementById(id)?.click(); }
+    } else if (step === STEPS.ATTENTION && event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        document.getElementById("startPS")?.click();
+    }
+}, { passive: false });

@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "human-preference-annotator",
+  "account_id": "e9344ea46241821b1d81c59a18c7478e",
   "main": "worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": {
@@ -12,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "human-preference-annotator",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "31a0a8d2-6354-4f41-892e-c0733ed901fc",
       "migrations_dir": "migrations"
     }
   ],

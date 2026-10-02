@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video player</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body { margin: 0; background: #000; color: #fff; font-family: var(--font-sans); }
+    #stage { width: 100vw; height: 100vh; background: #000; display: grid; place-items: center; overflow: hidden; }
+    #welcome { text-align: center; max-width: 600px; padding: 20px; }
+    #welcome h2 { font-family: var(--font-serif); font-size: 28px; font-weight: normal; color: var(--paper); }
+    #welcome p { font-size: 14px; line-height: 1.6; color: #c9c7bf; }
+    button { padding: 10px 16px; border: 1px solid var(--accent); border-radius: 5px; background: var(--accent); color: var(--paper); cursor: pointer; }
+    button:hover { background: var(--accent-hover); }
+    #video { display: block; max-width: none; max-height: none; object-fit: none; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main id="stage">
+    <div id="welcome">
+      <h2>Video player</h2>
+      <p>Set the display to side-by-side 3D. The left half should go to your left eye.</p>
+      <button id="begin">Play fullscreen</button>
+      <p id="message" role="status"></p>
+    </div>
+    <video id="video" playsinline disablepictureinpicture controlslist="nodownload noremoteplayback" hidden></video>
+  </main>
+  <script src="study-display.js"></script>
+</body>
+</html>

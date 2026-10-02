@@ -1,7 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Human Preference Annotator</title>
+  <script>if (new URLSearchParams(location.search).get("legacy") !== "1") location.replace("/study.html" + location.search);</script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,14 +22,30 @@
     </div>
   </div>
     <div id="description"></div>
-    <div id="videoStatus">&nbsp;</div>
-    <div id="videos">
+    <section id="displayControls" aria-label="Video display controls">
+      <p class="display-eyebrow">EXTENDED DISPLAY</p>
+      <h1>Watch. Compare. Choose.</h1>
+      <p>Play one video at a time in fullscreen on your second screen.</p>
+      <div class="screen-controls">
+        <button id="chooseDisplay">Choose video screen</button>
+        <select id="displayScreen" aria-label="Video screen" hidden></select>
+        <button id="openDisplay" disabled>Open video window</button>
+      </div>
+      <p id="displayStatus" role="status" aria-live="polite"></p>
+      <div class="clip-controls">
+        <button id="play-left" disabled><kbd>1</kbd><span>Play Up</span></button>
+        <button id="play-right" disabled><kbd>2</kbd><span>Play Down</span></button>
+      </div>
+      <p class="keyboard-guide"><kbd>↑</kbd> Prefer Up · <kbd>↓</kbd> Prefer Down <span id="cantTellHint">· <kbd>C</kbd> Can't tell</span></p>
+      <div id="videoStatus">&nbsp;</div>
+    </section>
+    <div id="videos" hidden>
       <div class="video-container">
-        <video id="leftVideo" muted autoplay loop playsinline disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback"></video>
+        <video id="leftVideo" muted loop playsinline disablepictureinpicture controlslist="nodownload noremoteplayback"></video>
         <div class="progress-bar" id="leftProgress"></div>
       </div>
       <div class="video-container">
-        <video id="rightVideo" muted autoplay loop playsinline disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback"></video>
+        <video id="rightVideo" muted loop playsinline disablepictureinpicture controlslist="nodownload noremoteplayback"></video>
         <div class="progress-bar" id="rightProgress"></div>
       </div>
     </div>
@@ -42,6 +61,8 @@
       <p id="instructions">All decisions are final. Please choose carefully.</p>
     </div>
   </div>
+  <script src="presentation.js"></script>
+  <script src="study-flow.js"></script>
   <script src="main.js"></script>
 </body>
 </html>
