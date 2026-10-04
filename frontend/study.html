@@ -24,6 +24,16 @@
             <p id="status" data-ui="status" role="status" aria-live="polite">Loading videos…</p>
             <section id="setup" data-ui="setup" hidden>
               <p id="setupInstructions" data-ui="setupInstructions"></p>
+              <div id="questWindowSettings" data-ui="questWindowSettings" hidden>
+                <p>Adjust the window before playback. Face forward when starting each video. Changing these settings requires watching A and B again.</p>
+                <label for="windowDistance">Distance <output id="windowDistanceValue">2.0 m</output></label>
+                <input id="windowDistance" type="range" min="1" max="4" step="0.1" value="2">
+                <label for="windowHeight">Up / down <output id="windowHeightValue">0.0 m</output></label>
+                <input id="windowHeight" type="range" min="-0.8" max="0.8" step="0.1" value="0">
+                <label for="windowSize">Size <output id="windowSizeValue">100%</output></label>
+                <input id="windowSize" type="range" min="60" max="120" step="5" value="100">
+                <p>Size controls how much of your view the window fills. Distance keeps that size consistent.</p>
+              </div>
               <p><label><input type="checkbox" id="setupConfirmed" data-ui="setupConfirmed"> My setup matches the instructions above.</label></p>
               <div class="screen-controls">
                 <button id="chooseScreen" data-ui="chooseScreen">Select screen</button>
@@ -43,6 +53,10 @@
                 <p>Playback, answers and the next pair stay in this window. Press 1 for A, 2 for B, or Esc to exit fullscreen.</p>
               </div>
             </section>
+            <details id="playbackCheck" data-ui="playbackCheck" hidden>
+              <summary>Playback check</summary>
+              <p id="playbackCheckText"></p>
+            </details>
             <p id="fixture" data-ui="fixture"></p>
           </div>
           <div id="buttons" data-ui="buttons" aria-label="Your answer">

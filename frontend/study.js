@@ -9,6 +9,8 @@ const matchedQuestFrameRateSessions = new WeakSet();
 const questWindows = new WeakMap();
 const QUEST_WINDOW_WIDTH = 1.8;
 const QUEST_WINDOW_DISTANCE = 2;
+const windowSettings = { distance: 2, height: 0, size: 100 };
+const windowInputs = ['windowDistance', 'windowHeight', 'windowSize'];
 const status = message => { $('status').textContent = message; window.studyControls?.sync(); };
 const deadline = (promise, message, milliseconds = 15000) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(message)), milliseconds);
@@ -31,12 +33,27 @@ function availability() {
   $('openScreen').disabled = fullscreenPending;
   $('openScreen').hidden = fullscreen();
   $('exitFullscreen').hidden = !fullscreen();
+  if (metaQuest) windowInputs.forEach(id => { $(id).disabled = busy || fullscreenPending || fullscreen(); });
   document.querySelectorAll('#buttons [data-choice]').forEach(button => {
     button.disabled = busy || fullscreenPending || !trial || !setup || (['A', 'B', 'tie'].includes(button.dataset.choice) && !(complete.A && complete.B));
   });
   window.studyControls?.sync();
 }
-function stop() { ++playbackGeneration; video.pause(); run = null; }
+function videoQuality() {
+  try { return video.getVideoPlaybackQuality?.() || null; } catch (_) { return null; }
+}
+function playbackReport() {
+  if (!metaQuest || !run?.started) return;
+  const quality = videoQuality(), baseline = run.quality;
+  const frames = quality && baseline
+    ? `${Math.max(0, quality.droppedVideoFrames - baseline.droppedVideoFrames)} / ${Math.max(0, quality.totalVideoFrames - baseline.totalVideoFrames)}`
+    : 'Unavailable';
+  const screen = questWindows.get(xrSession);
+  const rate = xrSession?.frameRate;
+  $('playbackCheckText').textContent = `${run.side}: source ${parseFrameRate(trial?.task?.video?.fps) ?? 'unknown'} fps · Headset ${rate ? `${rate} Hz` : 'unavailable'}${screen?.rateNote ? ` (${screen.rateNote})` : ''}\nVideo dropped / total frames: ${frames} · Waiting events: ${run.waits}\nHeadset refresh does not add new video frames. These counters do not measure headset compositor frame drops.`;
+  $('playbackCheck').hidden = false;
+}
+function stop() { ++playbackGeneration; playbackReport(); video.pause(); run = null; }
 function restoreControls() {
   video.hidden = true;
   $('app').hidden = false;
@@ -46,16 +63,18 @@ function showControls() {
   restoreControls();
   if (metaQuest && xrSession) {
     const session = xrSession;
+    questWindows.get(session)?.cancelStart?.(new Error('Immersive playback closed before it was ready.'));
     xrSession = null;
     session.end().catch(error => status(error.message));
   }
 }
 function watchQuestSession(session) {
   session.addEventListener('end', () => {
+    questWindows.get(session)?.cancelStart?.(new Error('Immersive playback closed before it was ready.'));
     if (xrSession !== session) return;
-    xrSession = null;
-    const interrupted = !!run;
+    const interrupted = !!run || fullscreenPending;
     stop(); restoreControls();
+    xrSession = null;
     if (interrupted) status('Immersive playback closed. Play this video again.');
     availability();
   }, { once: true });
@@ -77,10 +96,12 @@ function chooseQuestFrameRate(supportedFrameRates, sourceFrameRate) {
   })[0];
 }
 async function matchQuestFrameRate(session) {
-  if (typeof session.updateTargetFrameRate !== 'function') return;
+  const screen = questWindows.get(session);
+  if (typeof session.updateTargetFrameRate !== 'function') { screen.rateNote = 'refresh control unavailable'; return; }
   const target = chooseQuestFrameRate(session.supportedFrameRates, trial?.task?.video?.fps);
   if (target === null || Math.abs((session.frameRate ?? -1) - target) < 0.01) return;
-  try { await session.updateTargetFrameRate(target); } catch (_) { /* Keep the headset default when rate changes are unavailable. */ }
+  try { await session.updateTargetFrameRate(target); }
+  catch (_) { screen.rateNote = `request for ${target} Hz unavailable`; }
 }
 function renderQuestFrame(_time, frame) {
   if (xrSession !== frame.session) return;
@@ -90,9 +111,9 @@ function renderQuestFrame(_time, frame) {
     if (pose) {
       const matrix = pose.transform.matrix;
       screen.layer.transform = new window.XRRigidTransform({
-        x: matrix[12] - QUEST_WINDOW_DISTANCE * matrix[8],
-        y: matrix[13] - QUEST_WINDOW_DISTANCE * matrix[9],
-        z: matrix[14] - QUEST_WINDOW_DISTANCE * matrix[10],
+        x: matrix[12] - screen.settings.distance * matrix[8],
+        y: matrix[13] - screen.settings.distance * matrix[9] + screen.settings.height,
+        z: matrix[14] - screen.settings.distance * matrix[10],
       }, pose.transform.orientation);
       screen.placed = true;
     }
@@ -100,7 +121,12 @@ function renderQuestFrame(_time, frame) {
   frame.session.requestAnimationFrame(renderQuestFrame);
   if (!matchedQuestFrameRateSessions.has(frame.session)) {
     matchedQuestFrameRateSessions.add(frame.session);
-    matchQuestFrameRate(frame.session);
+    screen.rateReady = matchQuestFrameRate(frame.session);
+  }
+  if (screen?.placed && screen.startReady) {
+    const resolve = screen.startReady;
+    screen.startReady = null;
+    screen.rateReady.then(resolve);
   }
 }
 async function enterFullscreen(metadata) {
@@ -121,14 +147,19 @@ async function enterFullscreen(metadata) {
         if (typeof media.createQuadLayer !== 'function') throw new Error('This Meta Quest Browser does not support flat stereo video layers.');
         // A normal SBS video belongs on a flat stereo screen, not a panorama.
         // Fit the entire per-eye frame and keep its original aspect ratio.
+        const settings = { ...windowSettings };
+        // Size is angular: changing distance alone keeps the whole frame in view.
+        const width = QUEST_WINDOW_WIDTH * settings.distance / QUEST_WINDOW_DISTANCE * settings.size / 100;
         const layer = media.createQuadLayer(video, {
           space,
           layout: 'stereo-left-right',
-          width: QUEST_WINDOW_WIDTH,
-          height: QUEST_WINDOW_WIDTH / (video.videoWidth / 2 / video.videoHeight),
-          transform: new window.XRRigidTransform({ z: -QUEST_WINDOW_DISTANCE }),
+          width,
+          height: width / (video.videoWidth / 2 / video.videoHeight),
+          transform: new window.XRRigidTransform({ y: settings.height, z: -settings.distance }),
         });
-        questWindows.set(session, { layer, space, placed: false });
+        const screen = { layer, space, settings, placed: false };
+        screen.started = new Promise((resolve, reject) => { screen.startReady = resolve; screen.cancelStart = reject; });
+        questWindows.set(session, screen);
         session.updateRenderState({ layers: [layer] });
       } catch (error) {
         session?.end().catch(() => {});
@@ -137,6 +168,12 @@ async function enterFullscreen(metadata) {
       xrSession = session;
       watchQuestSession(session);
       session.requestAnimationFrame(renderQuestFrame);
+      try {
+        await deadline(questWindows.get(session).started, 'Headset tracking did not become ready. Try again.', 5000);
+      } catch (error) {
+        if (xrSession === session) { xrSession = null; await session.end().catch(() => {}); }
+        throw error;
+      }
     } else {
       if (!stage.requestFullscreen) throw new Error('This browser does not support fullscreen.');
       await deadline(stage.requestFullscreen(selectedScreen ? { screen: selectedScreen, navigationUI: 'hide' } : { navigationUI: 'hide' }), 'Fullscreen did not open. Click Enter fullscreen to try again.');
@@ -150,6 +187,7 @@ async function next() {
   const version = ++generation;
   busy = true; ready = false; trial = null; stop(); showControls();
   complete = { A: false, B: false };
+  $('playbackCheck').hidden = true;
   video.removeAttribute('src'); video.load();
   for (const url of Object.values(urls)) URL.revokeObjectURL(url);
   urls = {};
@@ -229,7 +267,7 @@ async function play(label) {
     if (!metaQuest && document.hidden) throw new Error('Return to this window and play the video again.');
     if (!metaQuest) checkGeometry();
     video.currentTime = 0;
-    run = { side: label, valid: true, started: false };
+    run = { side: label, valid: true, started: false, quality: videoQuality(), waits: 0 };
     video.hidden = false; $('app').hidden = true; stage.dataset.playing = 'true';
     await deadline(video.play(), 'Video didn’t start. Click Play to try again.');
     if (current()) status(`Playing ${label}. Watch to the end.`);
@@ -244,6 +282,7 @@ video.addEventListener('playing', () => {
 });
 video.addEventListener('seeking', () => { if (run?.started) run.valid = false; });
 video.addEventListener('ratechange', () => { if (run && video.playbackRate !== 1) run.valid = false; });
+video.addEventListener('waiting', () => { if (run?.started) run.waits++; });
 video.addEventListener('timeupdate', () => {
   if (run && (!fullscreen() || (!metaQuest && document.hidden))) { stop(); showControls(); status('Playback interrupted. Play this video again.'); availability(); }
 });
@@ -252,7 +291,7 @@ video.addEventListener('ended', () => {
     complete[run.side] = true;
     status(complete.B ? 'A and B finished. Choose an answer or replay either.' : 'A finished. Play B next.');
   } else { status('Playback stopped early. Play this video again.'); }
-  run = null; showControls(); availability();
+  playbackReport(); run = null; showControls(); availability();
 });
 video.addEventListener('error', () => {
   if (trial) { stop(); showControls(); status('Video stopped playing. Choose “Video or display problem”.'); availability(); }
@@ -311,6 +350,25 @@ $('openScreen').onclick = async () => {
 $('exitFullscreen').onclick = () => metaQuest ? xrSession?.end() : document.exitFullscreen();
 $('playA').onclick = () => play('A');
 $('playB').onclick = () => play('B');
+function syncWindowSettings() {
+  $('windowDistanceValue').textContent = `${windowSettings.distance.toFixed(1)} m`;
+  $('windowHeightValue').textContent = `${windowSettings.height > 0 ? '+' : ''}${windowSettings.height.toFixed(1)} m`;
+  $('windowSizeValue').textContent = `${windowSettings.size}%`;
+}
+for (const [id, key, min, max] of [['windowDistance', 'distance', 1, 4], ['windowHeight', 'height', -0.8, 0.8], ['windowSize', 'size', 60, 120]]) {
+  $(id).oninput = () => {
+    if (!metaQuest || busy || fullscreenPending || fullscreen()) { $(id).value = windowSettings[key]; return; }
+    const value = Number($(id).value);
+    const nextValue = Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : windowSettings[key];
+    $(id).value = nextValue;
+    if (windowSettings[key] === nextValue) return;
+    windowSettings[key] = nextValue;
+    complete = { A: false, B: false };
+    $('playbackCheck').hidden = true;
+    syncWindowSettings();
+    status('Window adjusted. Watch A and B again using this setup.'); availability();
+  };
+}
 $('setupConfirmed').onchange = () => {
   if (!$('setupConfirmed').checked) { stop(); showControls(); complete = { A: false, B: false }; status('Confirm your setup before playing.'); }
   else if (ready) status('Setup confirmed. Play A, then B.');
@@ -340,6 +398,8 @@ async function init() {
       $('setupInstructions').textContent += '\nMeta Quest shows the complete video on a flat stereoscopic window in front of you. Face forward when starting playback; left and right eyes receive their respective SBS images.';
       $('chooseScreen').hidden = true;
       $('openScreen').textContent = 'Open stereo video window';
+      $('questWindowSettings').hidden = false;
+      syncWindowSettings();
     }
     $('fixture').textContent = config.fixture ? 'Test data only.' : '';
     if (!token) throw new Error('Open the link from your study organizer.');
