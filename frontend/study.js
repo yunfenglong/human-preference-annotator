@@ -6,6 +6,9 @@ let config, sessionId, trial, screenDetails, selectedScreen;
 let urls = {}, complete = { A: false, B: false }, busy = false, ready = false, run = null;
 let generation = 0, playbackGeneration = 0, fullscreenPending = false, xrSession = null;
 const matchedQuestFrameRateSessions = new WeakSet();
+const questWindows = new WeakMap();
+const QUEST_WINDOW_WIDTH = 1.8;
+const QUEST_WINDOW_DISTANCE = 2;
 const status = message => { $('status').textContent = message; window.studyControls?.sync(); };
 const deadline = (promise, message, milliseconds = 15000) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(message)), milliseconds);
@@ -81,6 +84,19 @@ async function matchQuestFrameRate(session) {
 }
 function renderQuestFrame(_time, frame) {
   if (xrSession !== frame.session) return;
+  const screen = questWindows.get(frame.session);
+  if (screen && !screen.placed) {
+    const pose = frame.getViewerPose?.(screen.space);
+    if (pose) {
+      const matrix = pose.transform.matrix;
+      screen.layer.transform = new window.XRRigidTransform({
+        x: matrix[12] - QUEST_WINDOW_DISTANCE * matrix[8],
+        y: matrix[13] - QUEST_WINDOW_DISTANCE * matrix[9],
+        z: matrix[14] - QUEST_WINDOW_DISTANCE * matrix[10],
+      }, pose.transform.orientation);
+      screen.placed = true;
+    }
+  }
   frame.session.requestAnimationFrame(renderQuestFrame);
   if (!matchedQuestFrameRateSessions.has(frame.session)) {
     matchedQuestFrameRateSessions.add(frame.session);
@@ -99,15 +115,20 @@ async function enterFullscreen(metadata) {
       try {
         session = await navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['layers'] });
         await deadline(metadata, 'Video didn’t load. Exit immersive mode and try again.');
+        checkVideoDimensions();
         const space = await session.requestReferenceSpace('local');
         const media = new window.XRMediaBinding(session);
-        const layer = media.createEquirectLayer(video, {
+        if (typeof media.createQuadLayer !== 'function') throw new Error('This Meta Quest Browser does not support flat stereo video layers.');
+        // A normal SBS video belongs on a flat stereo screen, not a panorama.
+        // Fit the entire per-eye frame and keep its original aspect ratio.
+        const layer = media.createQuadLayer(video, {
           space,
           layout: 'stereo-left-right',
-          centralHorizontalAngle: Math.PI,
-          upperVerticalAngle: Math.PI / 2,
-          lowerVerticalAngle: -Math.PI / 2,
+          width: QUEST_WINDOW_WIDTH,
+          height: QUEST_WINDOW_WIDTH / (video.videoWidth / 2 / video.videoHeight),
+          transform: new window.XRRigidTransform({ z: -QUEST_WINDOW_DISTANCE }),
         });
+        questWindows.set(session, { layer, space, placed: false });
         session.updateRenderState({ layers: [layer] });
       } catch (error) {
         session?.end().catch(() => {});
@@ -156,10 +177,14 @@ async function next() {
   finally { if (version === generation) busy = false; availability(); }
 }
 
+function checkVideoDimensions() {
+  const geometry = trial.task.video;
+  if (video.videoWidth !== geometry.eye_width * 2 || video.videoHeight !== geometry.eye_height) throw new Error('This video has the wrong size. Choose “Video or display problem”.');
+}
 function checkGeometry() {
+  checkVideoDimensions();
   const geometry = trial.task.video;
   const ratio = window.devicePixelRatio || 1;
-  if (video.videoWidth !== geometry.eye_width * 2 || video.videoHeight !== geometry.eye_height) throw new Error('This video has the wrong size. Choose “Video or display problem”.');
   // One encoded pixel per physical display pixel. Center unchanged SBS bytes.
   const width = geometry.eye_width * 2 / ratio;
   const height = geometry.eye_height / ratio;
@@ -312,9 +337,9 @@ async function init() {
     $('question').textContent = config.question;
     $('setupInstructions').textContent = config.setup_instructions;
     if (metaQuest) {
-      $('setupInstructions').textContent += '\nMeta Quest playback automatically uses 180° stereoscopic left-right.';
+      $('setupInstructions').textContent += '\nMeta Quest shows the complete video on a flat stereoscopic window in front of you. Face forward when starting playback; left and right eyes receive their respective SBS images.';
       $('chooseScreen').hidden = true;
-      $('openScreen').textContent = 'Enter Quest 180° player';
+      $('openScreen').textContent = 'Open stereo video window';
     }
     $('fixture').textContent = config.fixture ? 'Test data only.' : '';
     if (!token) throw new Error('Open the link from your study organizer.');

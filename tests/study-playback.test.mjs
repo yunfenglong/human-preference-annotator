@@ -48,8 +48,21 @@ async function fixture({ setup=true, fits=true, quest=false, fps='24', questFram
     window.XRMediaBinding=class {
       constructor(session) { window.xrBindingSession=session; }
       createEquirectLayer(media,options) {
+        window.xrLayerType='equirect';
         window.xrLayerMedia=media; window.xrLayerOptions=options;
         return {media,options};
+      }
+      createQuadLayer(media,options) {
+        window.xrLayerType='quad';
+        window.xrLayerMedia=media; window.xrLayerOptions=options;
+        window.xrLayer={media,options,transform:options.transform};
+        return window.xrLayer;
+      }
+    };
+    window.XRRigidTransform=class {
+      constructor(position={},orientation={}) {
+        this.position={x:0,y:0,z:0,...position};
+        this.orientation={x:0,y:0,z:0,w:1,...orientation};
       }
     };
   }
@@ -161,7 +174,7 @@ test('Quest requires setup confirmation before entering immersive playback',asyn
   assert.match(nodes.status.textContent,/confirm.*setup/i);
 });
 
-test('Quest creates an automatic 180-degree left-right WebXR media layer',async()=>{
+test('Quest shows the complete SBS frame on a flat stereo window with the per-eye aspect ratio',async()=>{
   const {nodes,window,document,video}=await fixture({quest:true,fits:false});
   await nodes.playA.onclick(); await flush();
   assert.equal(document.fullscreenElement,undefined);
@@ -170,9 +183,11 @@ test('Quest creates an automatic 180-degree left-right WebXR media layer',async(
   assert.deepEqual(Array.from(window.xrSessionOptions.requiredFeatures),['layers']);
   assert.equal(window.xrLayerMedia,video);
   assert.equal(window.xrLayerOptions.layout,'stereo-left-right');
-  assert.equal(window.xrLayerOptions.centralHorizontalAngle,Math.PI);
-  assert.equal(window.xrLayerOptions.upperVerticalAngle,Math.PI/2);
-  assert.equal(window.xrLayerOptions.lowerVerticalAngle,-Math.PI/2);
+  assert.equal(window.xrLayerType,'quad');
+  assert.equal(window.xrLayerOptions.width,1.8);
+  assert.equal(window.xrLayerOptions.height,1.8/(320/180));
+  assert.equal(window.xrLayerOptions.transform.position.z,-2);
+  assert.equal(window.xrLayerOptions.centralHorizontalAngle,undefined);
   assert.equal(window.xrFrameRequests,1);
   window.xrFrameCallback(0,{session:window.xrSession});
   await flush();
@@ -180,6 +195,29 @@ test('Quest creates an automatic 180-degree left-right WebXR media layer',async(
   assert.deepEqual(window.xrTargetFrameRates,[72]);
   assert.equal(video.controls,false);
   assert.equal(video.paused,false);
+});
+
+test('Quest places the flat window in front of the initial gaze and keeps it anchored',async()=>{
+  const {nodes,window}=await fixture({quest:true});
+  await nodes.playA.onclick(); await flush();
+  const orientation={x:0,y:Math.SQRT1_2,z:0,w:Math.SQRT1_2};
+  const pose={transform:{matrix:[0,0,-1,0, 0,1,0,0, 1,0,0,0, 3,1,4,1],orientation}};
+  window.xrFrameCallback(0,{session:window.xrSession,getViewerPose:()=>pose});
+  assert.deepEqual(window.xrLayer.transform.position,{x:1,y:1,z:4});
+  assert.deepEqual(window.xrLayer.transform.orientation,orientation);
+  const placed=window.xrLayer.transform;
+  window.xrFrameCallback(1,{session:window.xrSession,getViewerPose:()=>({transform:{...pose.transform,matrix:Array(16).fill(0)}})});
+  assert.equal(window.xrLayer.transform,placed);
+});
+
+test('Quest rejects mismatched SBS dimensions before creating a video layer',async()=>{
+  const {nodes,window,video}=await fixture({quest:true});
+  video.videoWidth=641;
+  await nodes.playA.onclick(); await flush();
+  assert.equal(window.xrLayerType,undefined);
+  assert.equal(video.paused,true);
+  assert.equal(nodes.app.hidden,false);
+  assert.match(nodes.status.textContent,/wrong size/i);
 });
 
 test('Quest chooses one supported refresh rate from each video frame rate',async()=>{
