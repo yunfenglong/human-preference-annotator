@@ -109,6 +109,15 @@ The repository history intentionally contains no MP4 files. Obtain the video dir
 
 The API token needs scoped access to Workers, D1, and R2. CI applies D1 migrations before deploying.
 
+The Quest preview serves its branch's frontend and forwards `/api/*`,
+`/videos/*`, and `/healthz` to the production Worker through `MAIN_BACKEND`.
+It shares main's live batch settings, viewer groups, viewer tokens, admin
+credentials and responses. Changes in either dashboard apply to both, and
+answers submitted through the preview are saved in the production database.
+Use the same viewer token on either hostname. Deploy with
+`npx wrangler preview --name meta-quest-player --ignore-base-config`;
+preview deployments need no separate admin secrets or database migrations.
+
 ## Verification
 
 ### Extended-display playback and optional steps
