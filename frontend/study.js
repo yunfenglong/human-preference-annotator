@@ -56,6 +56,9 @@ function watchQuestSession(session) {
     availability();
   }, { once: true });
 }
+function renderQuestFrame(_time, frame) {
+  if (xrSession === frame.session) frame.session.requestAnimationFrame(renderQuestFrame);
+}
 async function enterFullscreen(metadata) {
   if (fullscreen()) return;
   fullscreenPending = true; availability();
@@ -84,6 +87,7 @@ async function enterFullscreen(metadata) {
       }
       xrSession = session;
       watchQuestSession(session);
+      session.requestAnimationFrame(renderQuestFrame);
     } else {
       if (!stage.requestFullscreen) throw new Error('This browser does not support fullscreen.');
       await deadline(stage.requestFullscreen(selectedScreen ? { screen: selectedScreen, navigationUI: 'hide' } : { navigationUI: 'hide' }), 'Fullscreen did not open. Click Enter fullscreen to try again.');

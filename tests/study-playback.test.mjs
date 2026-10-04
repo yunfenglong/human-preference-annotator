@@ -35,6 +35,7 @@ async function fixture({ setup=true, fits=true, quest=false }={}) {
       const session=new EventTarget();
       session.requestReferenceSpace=async type=>({type});
       session.updateRenderState=state=>{window.xrRenderState=state;};
+      session.requestAnimationFrame=callback=>{window.xrFrameRequests=(window.xrFrameRequests||0)+1;window.xrFrameCallback=callback;};
       session.end=async()=>session.dispatchEvent(new Event('end'));
       window.xrSession=session;
       return session;
@@ -167,6 +168,9 @@ test('Quest creates an automatic 180-degree left-right WebXR media layer',async(
   assert.equal(window.xrLayerOptions.centralHorizontalAngle,Math.PI);
   assert.equal(window.xrLayerOptions.upperVerticalAngle,Math.PI/2);
   assert.equal(window.xrLayerOptions.lowerVerticalAngle,-Math.PI/2);
+  assert.equal(window.xrFrameRequests,1);
+  window.xrFrameCallback(0,{session:window.xrSession});
+  assert.equal(window.xrFrameRequests,2);
   assert.equal(video.controls,false);
   assert.equal(video.paused,false);
 });
