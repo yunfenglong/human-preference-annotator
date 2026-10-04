@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 const token = new URLSearchParams(location.search).get('token');
+const metaQuest = /\bOculusBrowser\//i.test(navigator.userAgent) && /\bQuest(?:\s|;|\))/i.test(navigator.userAgent);
 let config, sessionId, trial, popup, screenDetails, selectedScreen;
 let urls = {}, complete = { A: false, B: false }, side = null, busy = false, ready = false, run = null;
 let generation = 0;
@@ -20,7 +21,7 @@ async function api(path, data) {
 function availability() {
   const displayReady = !!popup && !popup.closed && !!popup.document.getElementById('video');
   const setup = $('setupConfirmed').checked;
-  $('playA').disabled = busy || !ready || !displayReady || !setup;
+  $('playA').disabled = busy || !ready || !displayReady || (!setup && !metaQuest);
   $('playB').disabled = busy || !ready || !displayReady || !setup || !complete.A;
   document.querySelectorAll('[data-choice]').forEach(button => {
     button.disabled = busy || !trial || !setup || (['A', 'B', 'tie'].includes(button.dataset.choice) && !(complete.A && complete.B));
@@ -31,7 +32,11 @@ function stop() {
   if (video) video.pause();
   run = null;
 }
-function fullscreen() { return popup && !popup.closed && popup.document.fullscreenElement === popup.document.getElementById('stage'); }
+function fullscreen() {
+  if (!popup || popup.closed) return false;
+  const element = popup.document.fullscreenElement;
+  return element === popup.document.getElementById('stage') || (metaQuest && element === popup.document.getElementById('video'));
+}
 
 async function next() {
   const version = ++generation;
@@ -79,7 +84,8 @@ function checkGeometry(video) {
 }
 
 async function play(label) {
-  if (busy || !ready || !trial || !$('setupConfirmed').checked || (label === 'B' && !complete.A)) return;
+  const setup = $('setupConfirmed').checked;
+  if (busy || !ready || !trial || (!setup && !metaQuest) || (label === 'B' && !complete.A)) return;
   if (!popup || popup.closed) { status("Click “Open player” first."); return; }
   const stage = popup.document.getElementById('stage');
   const video = popup.document.getElementById('video');
@@ -87,21 +93,31 @@ async function play(label) {
   busy = true; availability(); stop();
   const version = generation;
   try {
+    if (metaQuest) {
+      side = label;
+      video.hidden = false;
+      popup.document.getElementById('welcome').hidden = true;
+      video.loop = false; video.controls = true; video.playbackRate = 1;
+      video.src = urls[label];
+    }
     // Fullscreen must begin directly from the click in the display window.
-    if (!fullscreen()) await deadline(stage.requestFullscreen(selectedScreen ? { screen: selectedScreen, navigationUI: 'hide' } : { navigationUI: 'hide' }), "Couldn’t enter fullscreen. Click “Play fullscreen” in the video window.");
+    const fullscreenTarget = metaQuest ? video : stage;
+    if (!fullscreen()) await deadline(fullscreenTarget.requestFullscreen(selectedScreen ? { screen: selectedScreen, navigationUI: 'hide' } : { navigationUI: 'hide' }), "Couldn’t enter fullscreen. Click “Play fullscreen” in the video window.");
     if (version !== generation || !fullscreen()) return;
-    side = label;
-    video.hidden = false;
-    popup.document.getElementById('welcome').hidden = true;
-    video.loop = false; video.controls = false; video.playbackRate = 1;
-    video.src = urls[label];
+    if (!metaQuest) {
+      side = label;
+      video.hidden = false;
+      popup.document.getElementById('welcome').hidden = true;
+      video.loop = false; video.controls = false; video.playbackRate = 1;
+      video.src = urls[label];
+    }
     await deadline(new Promise((resolve, reject) => {
       video.onloadedmetadata = resolve;
       video.onerror = () => reject(new Error("Video won’t play. Choose “Video or display problem”."));
       video.load();
     }), "Video didn’t load. Click “Play fullscreen” to try again.");
     if (version !== generation || !fullscreen()) return;
-    checkGeometry(video);
+    if (!metaQuest) checkGeometry(video);
     video.currentTime = 0;
     run = { side: label, valid: true, started: false, last: 0 };
     await deadline(video.play(), "Video didn’t start. Click “Play fullscreen” to try again.");
@@ -114,6 +130,7 @@ window.connectStudyDisplay = child => {
   if (child !== popup) return;
   const video = child.document.getElementById('video');
   child.document.getElementById('begin').onclick = () => play(complete.A ? 'B' : 'A');
+  if (metaQuest) child.document.querySelector('#welcome p').textContent = "Open fullscreen, then set the player to 180° stereoscopic left-right. Return and confirm the setup before replaying A.";
   video.addEventListener('playing', () => {
     if (!run || !fullscreen() || video.playbackRate !== 1) { video.pause(); return; }
     if (!run.started) { run.started = video.currentTime < 0.25; if (!run.started) run.valid = false; }
@@ -127,8 +144,12 @@ window.connectStudyDisplay = child => {
   });
   video.addEventListener('ended', () => {
     if (run?.valid && run.started && fullscreen()) {
-      complete[run.side] = true;
-      status(complete.B ? "A and B finished. Choose an answer or replay either." : "A finished. Play B next.");
+      if (!$('setupConfirmed').checked) {
+        status("Set the Meta Quest player to 180° stereoscopic left-right, confirm the setup, then replay A.");
+      } else {
+        complete[run.side] = true;
+        status(complete.B ? "A and B finished. Choose an answer or replay either." : "A finished. Play B next.");
+      }
     } else { status("Playback stopped early. Play this video again."); }
     run = null; availability();
   });
