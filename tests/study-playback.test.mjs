@@ -9,8 +9,9 @@ class Node extends EventTarget {
   removeAttribute(name) { delete this[name]; }
 }
 const flush = async () => { for(let i=0;i<8;i++) await new Promise(setImmediate); };
-async function fixture({ setup=true, fits=true }={}) {
-  const nodes=Object.fromEntries(['stage','video','app','status','playA','playB','setupConfirmed','progress','judgment','chooseScreen','screens','openScreen','exitFullscreen','question','setupInstructions','fixture','setup'].map(id=>[id,new Node()]));
+async function fixture({ setup=true, fits=true, quest=false, fps='24', questFrameRateApi=true, questPose, firstFrame=true }={}) {
+  const nodes=Object.fromEntries(['stage','video','app','status','playA','playB','setupConfirmed','progress','judgment','chooseScreen','screens','openScreen','exitFullscreen','question','setupInstructions','fixture','setup','questWindowSettings','windowDistance','windowHeight','windowSize','windowDistanceValue','windowHeightValue','windowSizeValue','playbackCheck','playbackCheckText'].map(id=>[id,new Node()]));
+  nodes.windowDistance.value='2'; nodes.windowHeight.value='0'; nodes.windowSize.value='100';
   nodes.setupConfirmed.checked=setup;
   const choices=['A','B','tie','uncertain','technical_failure'].map(choice=>{const node=new Node();node.dataset.choice=choice;return node;});
   const video=nodes.video;
@@ -21,13 +22,57 @@ async function fixture({ setup=true, fits=true }={}) {
   const document=new EventTarget();
   Object.assign(document,{getElementById:id=>nodes[id],querySelectorAll:()=>choices,hidden:false,exitFullscreen:async()=>{document.fullscreenElement=null;document.dispatchEvent(new Event('fullscreenchange'));}});
   const window=new EventTarget();
-  Object.assign(window,{document,devicePixelRatio:1,innerWidth:fits?1280:300,innerHeight:720,fullscreenCalls:0,popupCalls:0,open(){this.popupCalls++;return null;}});
+  Object.assign(window,{document,devicePixelRatio:1,innerWidth:fits?1280:300,innerHeight:720,fullscreenCalls:0,popupCalls:0,xrSessionCalls:0,open(){this.popupCalls++;return null;}});
   nodes.stage.requestFullscreen=async options=>{window.fullscreenCalls++;window.fullscreenOptions=options;document.fullscreenElement=nodes.stage;document.dispatchEvent(new Event('fullscreenchange'));};
+  video.requestFullscreen=async options=>{window.fullscreenCalls++;window.fullscreenOptions=options;document.fullscreenElement=video;document.dispatchEvent(new Event('fullscreenchange'));};
   const bytes=new Uint8Array([1,2,3]);
   const sha256=Buffer.from(await webcrypto.subtle.digest('SHA-256',bytes)).toString('hex');
   let nextCalls=0;
-  const fetch=async path=>({ok:true,json:async()=>path.endsWith('config')?{question:'Fixture',setup_instructions:'Confirm setup'}:path.endsWith('session')?{session_id:'s1'}:path.endsWith('respond')?{}:{trial_id:`t${++nextCalls}`,progress:{completed:nextCalls-1,total:2},task:{video:{eye_width:320,eye_height:180},stimuli:{A:{file:'/A.mp4',sha256},B:{file:'/B.mp4',sha256}}}},arrayBuffer:async()=>bytes.buffer});
-  const context=vm.createContext({window,document,location:{search:'?token=fixture'},URLSearchParams,URL,Blob,fetch,crypto:webcrypto,AbortSignal,setTimeout,clearTimeout});
+  const fetch=async path=>({ok:true,json:async()=>path.endsWith('config')?{question:'Fixture',setup_instructions:'Confirm setup'}:path.endsWith('session')?{session_id:'s1'}:path.endsWith('respond')?{}:{trial_id:`t${++nextCalls}`,progress:{completed:nextCalls-1,total:2},task:{video:{eye_width:320,eye_height:180,fps},stimuli:{A:{file:'/A.mp4',sha256},B:{file:'/B.mp4',sha256}}}},arrayBuffer:async()=>bytes.buffer});
+  const navigator={userAgent:quest?'Mozilla/5.0 (Linux; Android; Quest 3) OculusBrowser/40.0':'Mozilla/5.0 Chrome/140.0'};
+  if (quest) {
+    navigator.xr={requestSession:async(mode,options)=>{
+      window.xrSessionCalls++; window.xrMode=mode; window.xrSessionOptions=options;
+      const session=new EventTarget();
+      session.requestReferenceSpace=async type=>({type});
+      session.updateRenderState=state=>{window.xrRenderState=state;};
+      let initial=true;
+      session.requestAnimationFrame=callback=>{
+        window.xrFrameRequests=(window.xrFrameRequests||0)+1;window.xrFrameCallback=callback;
+        if (initial && firstFrame) queueMicrotask(()=>callback(0,{session,getViewerPose:()=>questPose || {transform:{matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],orientation:{x:0,y:0,z:0,w:1}}}}));
+        initial=false;
+      };
+      if (questFrameRateApi) {
+        session.frameRate=90;
+        session.supportedFrameRates=new Float32Array([72,80,90,120]);
+        session.updateTargetFrameRate=async rate=>{window.xrTargetFrameRates=(window.xrTargetFrameRates||[]).concat(rate);session.frameRate=rate;};
+      }
+      session.end=async()=>session.dispatchEvent(new Event('end'));
+      window.xrSession=session;
+      return session;
+    }};
+    window.XRMediaBinding=class {
+      constructor(session) { window.xrBindingSession=session; }
+      createEquirectLayer(media,options) {
+        window.xrLayerType='equirect';
+        window.xrLayerMedia=media; window.xrLayerOptions=options;
+        return {media,options};
+      }
+      createQuadLayer(media,options) {
+        window.xrLayerType='quad';
+        window.xrLayerMedia=media; window.xrLayerOptions=options;
+        window.xrLayer={media,options,transform:options.transform};
+        return window.xrLayer;
+      }
+    };
+    window.XRRigidTransform=class {
+      constructor(position={},orientation={}) {
+        this.position={x:0,y:0,z:0,...position};
+        this.orientation={x:0,y:0,z:0,w:1,...orientation};
+      }
+    };
+  }
+  const context=vm.createContext({window,document,navigator,location:{search:'?token=fixture'},URLSearchParams,URL,Blob,fetch,crypto:webcrypto,AbortSignal,setTimeout,clearTimeout});
   vm.runInContext(fs.readFileSync('frontend/study.js','utf8'),context);
   await flush();
   const finish=()=>{video.currentTime=3;video.dispatchEvent(new Event('ended'));};
@@ -124,4 +169,184 @@ test('a changed trial cancels playback waiting for fullscreen permission',async(
   resolve(); await pending; await flush();
   assert.equal(video.paused,true);
   assert.equal(nodes.app.hidden,false);
+});
+
+test('Quest requires setup confirmation before entering immersive playback',async()=>{
+  const {nodes,window,video}=await fixture({quest:true,setup:false,fits:false});
+  assert.equal(nodes.playA.disabled,true);
+  await nodes.openScreen.onclick(); await flush();
+  assert.equal(window.xrSessionCalls,0);
+  assert.equal(video.paused,true);
+  assert.match(nodes.status.textContent,/confirm.*setup/i);
+});
+
+test('Quest shows the complete SBS frame on a flat stereo window with the per-eye aspect ratio',async()=>{
+  const {nodes,window,document,video}=await fixture({quest:true,fits:false});
+  await nodes.playA.onclick(); await flush();
+  assert.equal(document.fullscreenElement,undefined);
+  assert.equal(window.xrSessionCalls,1);
+  assert.equal(window.xrMode,'immersive-vr');
+  assert.deepEqual(Array.from(window.xrSessionOptions.requiredFeatures),['layers']);
+  assert.equal(window.xrLayerMedia,video);
+  assert.equal(window.xrLayerOptions.layout,'stereo-left-right');
+  assert.equal(window.xrLayerType,'quad');
+  assert.equal(window.xrLayerOptions.width,1.8);
+  assert.equal(window.xrLayerOptions.height,1.8/(320/180));
+  assert.equal(window.xrLayerOptions.transform.position.z,-2);
+  assert.equal(window.xrLayerOptions.centralHorizontalAngle,undefined);
+  assert.equal(window.xrFrameRequests,2);
+  window.xrFrameCallback(0,{session:window.xrSession});
+  await flush();
+  assert.equal(window.xrFrameRequests,3);
+  assert.deepEqual(window.xrTargetFrameRates,[72]);
+  assert.equal(video.controls,false);
+  assert.equal(video.paused,false);
+});
+
+test('Quest places the flat window in front of the initial gaze and keeps it anchored',async()=>{
+  const orientation={x:0,y:Math.SQRT1_2,z:0,w:Math.SQRT1_2};
+  const pose={transform:{matrix:[0,0,-1,0, 0,1,0,0, 1,0,0,0, 3,1,4,1],orientation}};
+  const {nodes,window}=await fixture({quest:true,questPose:pose});
+  await nodes.playA.onclick(); await flush();
+  assert.deepEqual(window.xrLayer.transform.position,{x:1,y:1,z:4});
+  assert.deepEqual(window.xrLayer.transform.orientation,orientation);
+  const placed=window.xrLayer.transform;
+  window.xrFrameCallback(1,{session:window.xrSession,getViewerPose:()=>({transform:{...pose.transform,matrix:Array(16).fill(0)}})});
+  assert.equal(window.xrLayer.transform,placed);
+});
+
+test('Quest rejects mismatched SBS dimensions before creating a video layer',async()=>{
+  const {nodes,window,video}=await fixture({quest:true});
+  video.videoWidth=641;
+  await nodes.playA.onclick(); await flush();
+  assert.equal(window.xrLayerType,undefined);
+  assert.equal(video.paused,true);
+  assert.equal(nodes.app.hidden,false);
+  assert.match(nodes.status.textContent,/wrong size/i);
+});
+
+test('Quest chooses one supported refresh rate from each video frame rate',async()=>{
+  const {context}=await fixture({quest:true});
+  const choose=source=>vm.runInContext(`chooseQuestFrameRate([72, 80, 90, 100, 120], ${JSON.stringify(source)})`,context);
+  assert.equal(choose('24'),72);
+  assert.equal(choose('30'),90);
+  assert.equal(choose('60'),120);
+  assert.equal(choose('30000/1001'),90);
+  assert.equal(choose('25'),100);
+});
+
+test('Quest keeps its default refresh rate when the frame-rate API is unavailable',async()=>{
+  const {nodes,window}=await fixture({quest:true,questFrameRateApi:false});
+  await nodes.playA.onclick(); await flush();
+  window.xrFrameCallback(0,{session:window.xrSession}); await flush();
+  assert.equal(window.xrTargetFrameRates,undefined);
+});
+
+test('Quest waits for its first pose and refresh-rate request before playing',async()=>{
+  const {nodes,window,video}=await fixture({quest:true,firstFrame:false});
+  const pending=nodes.playA.onclick(); await flush();
+  assert.equal(video.paused,true);
+  let release;
+  window.xrSession.updateTargetFrameRate=()=>new Promise(resolve=>{release=resolve;});
+  const pose={transform:{matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],orientation:{w:1}}};
+  window.xrFrameCallback(0,{session:window.xrSession,getViewerPose:()=>pose}); await flush();
+  assert.equal(video.paused,true);
+  release(); await pending;
+  assert.equal(video.paused,false);
+});
+
+test('Quest window settings apply equally to A and B and require rewatch after a change',async()=>{
+  const {nodes,window,choices,finish}=await fixture({quest:true});
+  nodes.windowDistance.value='3'; nodes.windowDistance.oninput();
+  nodes.windowHeight.value='0.4'; nodes.windowHeight.oninput();
+  nodes.windowSize.value='80'; nodes.windowSize.oninput();
+  for (const side of ['A','B']) {
+    await nodes[`play${side}`].onclick();
+    assert.ok(Math.abs(window.xrLayerOptions.width-2.16)<1e-9);
+    assert.deepEqual(window.xrLayer.transform.position,{x:0,y:0.4,z:-3});
+    assert.equal(nodes.windowSize.disabled,true);
+    finish(); await flush();
+  }
+  assert.equal(choices[0].disabled,false);
+  nodes.windowSize.value='90'; nodes.windowSize.oninput();
+  assert.equal(choices[0].disabled,true);
+  assert.equal(nodes.playB.disabled,true);
+  assert.match(nodes.status.textContent,/watch A and B again/i);
+});
+
+test('Quest reports playback frame deltas, waiting events and actual headset refresh',async()=>{
+  const {nodes,video,finish}=await fixture({quest:true});
+  let quality={totalVideoFrames:100,droppedVideoFrames:10};
+  video.getVideoPlaybackQuality=()=>quality;
+  await nodes.playA.onclick();
+  video.dispatchEvent(new Event('waiting'));
+  quality={totalVideoFrames:244,droppedVideoFrames:12};
+  finish();
+  assert.match(nodes.playbackCheckText.textContent,/24 fps/);
+  assert.match(nodes.playbackCheckText.textContent,/72 Hz/);
+  assert.match(nodes.playbackCheckText.textContent,/2 \/ 144/);
+  assert.match(nodes.playbackCheckText.textContent,/1/);
+});
+
+test('closing Quest during startup cancels playback and restores controls',async()=>{
+  const {nodes,window,video}=await fixture({quest:true,firstFrame:false});
+  const pending=nodes.playA.onclick(); await flush();
+  await window.xrSession.end(); await pending;
+  assert.equal(video.paused,true);
+  assert.equal(nodes.app.hidden,false);
+  assert.equal(nodes.playB.disabled,true);
+  assert.match(nodes.status.textContent,/closed/i);
+});
+
+test('Quest window values are bounded and ignore changes during playback',async()=>{
+  const {nodes,context}=await fixture({quest:true});
+  nodes.windowDistance.value='100'; nodes.windowDistance.oninput();
+  assert.equal(vm.runInContext('windowSettings.distance',context),4);
+  nodes.windowSize.value='invalid'; nodes.windowSize.oninput();
+  assert.equal(vm.runInContext('windowSettings.size',context),100);
+  await nodes.playA.onclick();
+  nodes.windowDistance.value='1'; nodes.windowDistance.oninput();
+  assert.equal(vm.runInContext('windowSettings.distance',context),4);
+});
+
+test('unsupported refresh requests and absent video counters allow playback with explicit diagnostics',async()=>{
+  const {nodes,window,video,finish}=await fixture({quest:true,firstFrame:false});
+  const pending=nodes.playA.onclick(); await flush();
+  window.xrSession.updateTargetFrameRate=async()=>{throw new Error('Unavailable');};
+  window.xrFrameCallback(0,{session:window.xrSession,getViewerPose:()=>({transform:{matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],orientation:{w:1}}})});
+  await pending;
+  assert.equal(video.paused,false);
+  finish();
+  assert.match(nodes.playbackCheckText.textContent,/90 Hz/);
+  assert.match(nodes.playbackCheckText.textContent,/72 Hz unavailable/);
+  assert.match(nodes.playbackCheckText.textContent,/frames: Unavailable/);
+});
+
+test('Quest completes A and B, restores controls and saves the next trial',async()=>{
+  const {nodes,choices,document,video,window,context,finish}=await fixture({quest:true,fits:false});
+  for (const label of ['A','B']) {
+    await nodes[`play${label}`].onclick(); await flush();
+    assert.equal(document.fullscreenElement,undefined);
+    assert.equal(window.xrSessionCalls,label==='A'?1:2);
+    assert.equal(video.paused,false);
+    window.dispatchEvent(new Event('resize'));
+    assert.equal(video.paused,false);
+    finish(); await flush();
+    assert.equal(nodes.app.hidden,false);
+  }
+  assert.equal(choices[0].disabled,false);
+  await choices[0].onclick(); await flush();
+  assert.equal(vm.runInContext('trial.trial_id',context),'t2');
+  assert.equal(window.popupCalls,0);
+});
+
+test('exiting a Quest immersive session interrupts playback and requires replay',async()=>{
+  const {nodes,window,video,choices}=await fixture({quest:true});
+  await nodes.playA.onclick(); await flush();
+  await window.xrSession.end(); await flush();
+  assert.equal(video.paused,true);
+  assert.equal(nodes.app.hidden,false);
+  assert.equal(nodes.playB.disabled,true);
+  assert.equal(choices[0].disabled,true);
+  assert.match(nodes.status.textContent,/Immersive playback closed/);
 });

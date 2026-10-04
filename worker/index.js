@@ -518,6 +518,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Quest previews serve their own frontend while using main's live backend.
+    // Forward before CORS/auth handling so main remains the source of all settings.
+    if (env.MAIN_BACKEND && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/videos/') || url.pathname === '/healthz')) {
+      return env.MAIN_BACKEND.fetch(request);
+    }
+
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
       const origin = allowedOrigin(request, env);
       if (!origin) return new Response(null, { status: 403 });

@@ -16,11 +16,17 @@
     if (copy.tagName === 'BUTTON') {
       copy.onclick = () => source.click();
     } else if (copy.tagName === 'INPUT' || copy.tagName === 'SELECT') {
-      copy.onchange = () => {
+      const forward = type => {
         if (copy.type === 'checkbox') source.checked = copy.checked;
         else source.value = copy.value;
-        source.dispatchEvent(new Event('change', { bubbles: true }));
+        source.dispatchEvent(new Event(type, { bubbles: true }));
       };
+      copy.onchange = () => forward('change');
+      if (copy.type === 'range') copy.oninput = () => forward('input');
+    } else if (copy.tagName === 'DETAILS') {
+      for (const [node, other] of [[source, copy], [copy, source]]) node.addEventListener('toggle', () => {
+        if (other.open !== node.open) other.open = node.open;
+      });
     }
     if (['BUTTON', 'INPUT', 'SELECT'].includes(copy.tagName)) {
       for (const node of [source, copy]) {

@@ -104,6 +104,18 @@ button[data-focused], input[data-focused], select[data-focused] { outline: 2px s
 [data-ui="setup"] label { line-height: 1.6; }
 [data-ui="setup"] input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; }
 
+[data-ui="questWindowSettings"] { max-width: 480px; margin: 20px auto; text-align: left; }
+.control-body:has([data-ui="questWindowSettings"]:not([hidden])) { scrollbar-width: thin; }
+.control-body:has([data-ui="questWindowSettings"]:not([hidden]))::-webkit-scrollbar { display: block; width: 6px; }
+.control-body:has([data-ui="questWindowSettings"]:not([hidden]))::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+[data-ui="questWindowSettings"] p, [data-ui="playbackCheck"] p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+[data-ui="questWindowSettings"] label { display: flex; justify-content: space-between; font-size: 13px; }
+[data-ui="questWindowSettings"] output { font-variant-numeric: tabular-nums; }
+[data-ui="questWindowSettings"] input[type="range"] { width: 100%; margin: 6px 0 12px; accent-color: var(--ink); }
+[data-ui="playbackCheck"] { max-width: 600px; margin: 18px auto; text-align: left; font-size: 12px; }
+[data-ui="playbackCheck"] summary { cursor: pointer; }
+[data-ui="playbackCheck"] p { white-space: pre-line; }
+
 [data-ui="setup"] .screen-controls {
   justify-content: center;
   align-items: center;

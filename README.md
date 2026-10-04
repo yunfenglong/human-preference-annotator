@@ -109,6 +109,15 @@ The repository history intentionally contains no MP4 files. Obtain the video dir
 
 The API token needs scoped access to Workers, D1, and R2. CI applies D1 migrations before deploying.
 
+The Quest preview serves its branch's frontend and forwards `/api/*`,
+`/videos/*`, and `/healthz` to the production Worker through `MAIN_BACKEND`.
+It shares main's live batch settings, viewer groups, viewer tokens, admin
+credentials and responses. Changes in either dashboard apply to both, and
+answers submitted through the preview are saved in the production database.
+Use the same viewer token on either hostname. Deploy with
+`npx wrangler preview --name meta-quest-player --ignore-base-config`;
+preview deployments need no separate admin secrets or database migrations.
+
 ## Verification
 
 ### Extended-display playback and optional steps
@@ -122,6 +131,18 @@ The button page has two adjacent 16:9 eye panels with identical content and
 synchronized controls; either side operates the same session.
 `1` plays A, `2` plays B, and Esc exits fullscreen. Run these checks with
 `node --test tests/study-playback.test.mjs`.
+
+On Meta Quest, confirm the setup and select **Open stereo video window** or
+**Play A**. The app uses a flat WebXR Quad Media Layer with stereoscopic
+left-right layout. The entire SBS frame is shown without cropping, with each
+eye receiving its own half and the screen retaining the per-eye aspect ratio.
+The window is 1.8 metres wide at a virtual distance of 2 metres (about 48°
+horizontal viewing angle), placed in front of the initial gaze and anchored
+there while the video plays. A and B use the same screen size and distance.
+The immersive session closes after each video so the controls return for B or
+the judgment. Quest validates video dimensions and skips desktop physical
+screen-fit checks. Verify the complete frame and stereo on the headset before
+collecting responses.
 
 The legacy driving study still uses a separate display window:
 Use desktop Chrome with displays in **Extend** mode. Open an annotator link,
