@@ -132,13 +132,12 @@ synchronized controls; either side operates the same session.
 `1` plays A, `2` plays B, and Esc exits fullscreen. Run these checks with
 `node --test tests/study-playback.test.mjs`.
 
-On Meta Quest, **Open Quest player** or **Play A** opens the native video
-player. Set its mode to 180° stereoscopic left-right, return to the controls,
-confirm the setup, then replay A and watch B. The initial preview before setup
-confirmation does not count as completed playback. Controls return after each
-video; Quest uses the native video's fullscreen instead of the desktop stage
-and skips desktop display geometry checks. Verify this mode on the headset
-before collecting responses.
+On Meta Quest, confirm the setup and select **Enter Quest 180° player** or
+**Play A**. The app opens an immersive WebXR Media Layer configured as a 180°
+equirectangular projection with stereoscopic left-right layout; no native-player
+mode selection is required. The immersive session closes after each video so
+the controls return for B or the judgment. Quest skips desktop display geometry
+checks. Verify this mode on the headset before collecting responses.
 
 The legacy driving study still uses a separate display window:
 Use desktop Chrome with displays in **Extend** mode. Open an annotator link,

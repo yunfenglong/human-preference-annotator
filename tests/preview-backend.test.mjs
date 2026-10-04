@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 const require = createRequire(new URL('../node_modules/wrangler/package.json', import.meta.url));
 const { build } = require('esbuild');
 // Bundle the same JSON catalogue imports Wrangler bundles for deployment.
-const bundle = await build({entryPoints:[new URL('../worker/index.js', import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'browser'});
+const bundle = await build({entryPoints:[fileURLToPath(new URL('../worker/index.js', import.meta.url))],bundle:true,write:false,format:'esm',platform:'browser'});
 const { default: worker } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 
 test('preview admin requests reach main with their authentication and body intact', async () => {
