@@ -3,5 +3,5 @@ ADMIN_TOKEN=choose-a-long-random-local-token
 # Optional comma-separated origins when the frontend is hosted elsewhere.
 # CORS_ORIGIN=http://localhost:8000,https://example.com
 
-# SHA-256 printed by npm run study:import; leave unset until the handoff is verified.
-# SK_EXPORT_ID=64-character-sha256-of-TASKS-json
+# Select and activate a bucket-root batch in /admin/.
+# No export ID or batch path is needed in Worker variables.

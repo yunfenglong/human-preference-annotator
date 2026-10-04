@@ -1,105 +1,98 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Admin Dashboard</title>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; }
-    h2 { margin-top: 0; }
-    section { margin: 24px 0; }
-    input, button { padding: 6px 10px; margin: 4px 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #f5f5f5; }
-    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .danger { background:#ffecec; border:1px solid #f5a5a5; padding:10px; }
-    .success { color: #2e7d32; font-weight: 600; }
-    .muted { color: #666; font-size: 12px; }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Annotation Admin Dashboard</title>
   <link rel="stylesheet" href="../theme.css">
   <link rel="stylesheet" href="study.css">
 </head>
 <body>
-  <p><a href="/admin/study.html">SK3 study responses and incremental export</a></p>
-  <h2>Annotation Admin Dashboard</h2>
-
+  <header class="dashboard-header">
+    <p class="eyebrow">Human Preference Annotator</p>
+    <h2>Annotation dashboard</h2>
+    <p class="muted">Manage batches, viewer groups and response deliveries in one place.</p>
+  </header>
   <section id="loginSection">
-    <div class="row">
-      <label>Password: <input type="password" id="adminPassword"></label>
-      <button id="loginBtn">Login</button>
-      <span id="loginMsg" class="muted"></span>
-    </div>
+    <form id="loginForm" class="row">
+      <label>Password: <input type="password" id="adminPassword" autocomplete="current-password" required></label>
+      <button id="loginBtn" type="submit">Login</button>
+      <span id="loginMsg" class="muted" role="status"></span>
+    </form>
   </section>
-
-  <section id="dash" style="display:none">
-    <section>
-      <h3>Annotation Settings</h3>
-      <form id="settingsForm">
-        <p><label><input type="checkbox" id="setting-cantTell" disabled> Show "Can't tell"</label></p>
-        <p><label><input type="checkbox" id="setting-surprise" disabled> Enable Surprise step</label></p>
-        <p><label><input type="checkbox" id="setting-attention" disabled> Enable Attention step</label></p>
-        <p class="muted">Disabled steps are skipped. Changes apply when annotators load the next pair or refresh.</p>
-        <button id="saveSettings" disabled>Save settings</button>
-        <span id="settingsMsg" class="muted" role="status" aria-live="polite"></span>
+  <main id="dash" hidden>
+    <p id="studyStatus" class="muted" role="status" aria-live="polite"></p>
+    <section aria-labelledby="batchHeading">
+      <h3 id="batchHeading">Batch</h3>
+      <div class="row">
+        <label>Batch: <select id="batch"></select></label>
+        <button id="refreshBatches">Refresh batches</button>
+      </div>
+      <p id="activeBatch" class="muted"></p>
+      <p id="identity"></p>
+      <div id="groupSummary" class="group-summary" aria-label="Viewer group task counts"></div>
+      <p id="assignmentNote" class="muted"></p>
+      <details id="setupDetails">
+        <summary>Question and viewing setup</summary>
+        <p id="batchInfo" class="muted"></p>
+        <form id="batchSetup" hidden>
+          <p><label>Agreed question<br><textarea id="question" rows="2" required></textarea></label></p>
+          <p><label>Agreed viewing setup (device, stereo mode, glasses, distance and lighting)<br><textarea id="setupInstructions" rows="3" required></textarea></label></p>
+          <p><label>Repeat rate: <input id="repeatRate" type="number" min="0" max="0.5" step="0.01" value="0.1" required></label></p>
+          <p><label><input id="setupConfirmed" type="checkbox" required> The question and viewing setup have been agreed.</label></p>
+          <p class="muted">Activation applies this batch to viewer links. Settings are locked after enrollment.</p>
+          <button id="activateBatch" type="submit">Save setup and activate batch</button>
+        </form>
+      </details>
+    </section>
+    <section aria-labelledby="viewersHeading">
+      <div class="section-heading">
+        <h3 id="viewersHeading">Viewers &amp; groups</h3>
+        <button id="refreshViewers" disabled>Refresh viewers</button>
+      </div>
+      <p class="muted">Choose a group for each viewer ID. Progress counts that group’s assigned tasks; repeats are shown separately. Groups lock when a viewer starts a session.</p>
+      <div class="table-scroll">
+        <table id="viewerTable">
+          <thead><tr><th>Viewer ID</th><th>Group</th><th>Completed / assigned</th><th>Repeats</th><th>Viewer link</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="viewerStatus" class="muted" role="status"></p>
+      <form id="addViewerForm" class="row">
+        <label>Viewer ID: <input id="newViewerId" placeholder="P017" required maxlength="128"></label>
+        <label>Group: <select id="newViewerGroup" disabled></select></label>
+        <button id="addViewer" type="submit" disabled>Add viewer</button>
       </form>
+      <p id="generatedViewer" class="success" role="status"></p>
     </section>
-    <section>
-      <h3>Annotator Progress</h3>
+    <section aria-labelledby="exportHeading">
+      <h3 id="exportHeading">Download answers</h3>
+      <p class="muted">Export answers for the selected batch, including earlier batches without reactivating them.</p>
       <div class="row">
-        <button id="refreshProgressBtn">Refresh</button>
-        <span id="progressMsg" class="muted"></span>
+        <label>Last imported cursor: <input id="after" type="number" min="0" value="0" step="1"></label>
+        <button id="download" disabled>Download JSON</button>
+        <button id="acknowledge" disabled>Mark as imported</button>
       </div>
-      <table id="progressTable">
-        <thead><tr><th>Annotator ID</th><th>Completed</th><th>Total</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <p class="muted">Mark as imported only after pixelMorph imports the file. Retain the cursor with your handoff records.</p>
     </section>
-
-    <section>
-      <h3>Tokens</h3>
-      <div class="row">
-        <button id="refreshTokensBtn">Refresh</button>
-        <span id="tokensMsg" class="muted"></span>
-      </div>
-      <table id="tokensTable">
-        <thead><tr><th>Annotator ID</th><th>Token</th><th>Actions</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <section>
-      <h3>Add Annotator</h3>
-      <div class="row">
-        <input id="newAnnotatorId" placeholder="Annotator ID (Email)" />
-        <button id="addAnnotatorBtn">Add (Generate Token)</button>
-        <span id="addAnnotatorMsg" class="muted"></span>
-      </div>
-      <div id="generatedToken" class="success"></div>
-    </section>
-
-    <!-- <section>
-      <h3>Remove Annotator / Token</h3>
-      <div class="row">
-        <input id="removeAnnotatorId" placeholder="Annotator ID (optional)" />
-        <input id="removeToken" placeholder="Token (optional)" />
-        <button id="removeAnnotatorBtn">Remove</button>
-        <span class="muted">Specify either annotatorId or token.</span>
-      </div>
-      <div class="muted">Tip: you can also remove directly from the table.</div>
-    </section> -->
-
-    <section>
-      <h3>Export Annotations</h3>
-      <button id="downloadBtn">Download JSON</button>
-    </section>
-
-    <section class="danger">
-      <h3>Data Reset</h3>
-      <button id="flushBtn">Flush Database (ALL DATA)</button>
-    </section>
-  </section>
-
-  <script src="admin.js"></script>
+    <details id="legacyTools">
+      <summary>Legacy driving study tools</summary>
+      <section>
+        <h3>Legacy annotation settings</h3>
+        <form id="settingsForm">
+          <p><label><input type="checkbox" id="setting-cantTell" disabled> Show "Can't tell"</label></p>
+          <p><label><input type="checkbox" id="setting-surprise" disabled> Enable Surprise step</label></p>
+          <p><label><input type="checkbox" id="setting-attention" disabled> Enable Attention step</label></p>
+          <button id="saveSettings" disabled>Save settings</button>
+          <span id="settingsMsg" class="muted" role="status"></span>
+        </form>
+      </section>
+      <section>
+        <button id="legacyDownload">Download legacy annotations</button>
+        <button id="legacyFlush">Reset legacy driving data</button>
+      </section>
+    </details>
+  </main>
+  <script type="module" src="admin.js"></script>
 </body>
 </html>

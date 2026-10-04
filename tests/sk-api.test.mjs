@@ -7,6 +7,8 @@ import { handleStudy } from '../worker/sk-labeling.js';
 
 globalThis.crypto ||= webcrypto;
 let runtime, env;
+let exportId;
+const batch = 'fixture_batch';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const manifest = { schema: 'sk_labeling_task_export_v1', seed: 9, fixture: true,
   bundle: { question_id: 'fixture-which-looks-better', display_sha256: 'd'.repeat(64), protocol_sha256: 'f'.repeat(64) }, task_count: 12,
@@ -24,21 +26,24 @@ const call = async (path, body, admin = false) => {
 before(async () => {
   runtime = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default { fetch() { return new Response("test"); } }', d1Databases: ['DB'], r2Buckets: ['VIDEOS'] }));
   env = { DB: await runtime.getD1Database('DB'), VIDEOS: await runtime.getR2Bucket('VIDEOS') };
-  for (const name of ['0001_initial.sql', '0002_sk_labeling.sql']) {
+  for (const name of ['0001_initial.sql', '0002_sk_labeling.sql', '0004_study_batches.sql', '0005_viewer_groups.sql']) {
     // D1 exec accepts a statement per line; prepare handles the full migration SQL.
     const source = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     for (const statement of source.replace(/--[^\n]*/g, '').split(';').map(s => s.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
   }
   await env.DB.prepare("INSERT INTO tokens(annotator_id, token) VALUES ('P017', 'test-token'), ('P042', 'other-token')").run();
-  const bytes = JSON.stringify(manifest); env.SK_EXPORT_ID = hash(bytes);
-  await env.VIDEOS.put(`videos/studies/${env.SK_EXPORT_ID}/TASKS.json`, bytes);
-  await env.VIDEOS.put(`videos/studies/${env.SK_EXPORT_ID}/STUDY.json`, JSON.stringify({ ...manifest.bundle, question: 'Which looks better?', setup_instructions: 'Synthetic test display', setup_confirmed: true, repeat_rate: 0.1 }));
+  const bytes = JSON.stringify(manifest); exportId = hash(bytes);
+  await env.VIDEOS.put(`${batch}/TASKS.json`, bytes);
+  const settings = JSON.stringify({ ...manifest.bundle, question: 'Which looks better?', setup_instructions: 'Synthetic test display', setup_confirmed: true, repeat_rate: 0.1 });
+  await env.DB.prepare('INSERT INTO sk_batches(batch, export_id, settings_json) VALUES (?1, ?2, ?3)').bind(batch, exportId, settings).run();
+  await env.DB.prepare('INSERT INTO sk_active_batch(id, batch) VALUES (1, ?1)').bind(batch).run();
 });
 after(async () => runtime?.dispose());
 
 test('unconfigured export fails closed and invalid token is rejected', async () => {
-  const old = env.SK_EXPORT_ID; env.SK_EXPORT_ID = '';
-  assert.equal((await call('study/config')).status, 503); env.SK_EXPORT_ID = old;
+  await env.DB.prepare('DELETE FROM sk_active_batch').run();
+  assert.equal((await call('study/config')).status, 503);
+  await env.DB.prepare('INSERT INTO sk_active_batch(id, batch) VALUES (1, ?1)').bind(batch).run();
   assert.equal((await call('study/session', { token: 'unknown' })).status, 403);
   assert.equal((await call('admin/study/export')).status, 403);
 });
@@ -79,19 +84,19 @@ test('complete lifecycle: reload, playback validation, retry, primary failure, s
 test('server binds sessions to viewers and rejects viewer reuse across exports', async () => {
   const s = (await call('study/session', { token: 'test-token' })).body.session_id;
   assert.equal((await call('study/next', { token: 'other-token', session_id: s })).status, 403);
-  const old = env.SK_EXPORT_ID;
-  const another = { ...manifest, seed: 10 }; const bytes = JSON.stringify(another); env.SK_EXPORT_ID = hash(bytes);
-  await env.VIDEOS.put(`videos/studies/${env.SK_EXPORT_ID}/TASKS.json`, bytes);
-  await env.VIDEOS.put(`videos/studies/${env.SK_EXPORT_ID}/STUDY.json`, JSON.stringify({ ...manifest.bundle, question: 'Which looks better?', setup_instructions: 'Test', setup_confirmed: true, repeat_rate: 0.1 }));
-  assert.equal((await call('study/session', { token: 'test-token' })).status, 409); env.SK_EXPORT_ID = old;
+  const another = { ...manifest, seed: 10 }; const bytes = JSON.stringify(another);
+  await env.VIDEOS.put('another_batch/TASKS.json', bytes);
+  await env.DB.prepare('INSERT INTO sk_batches(batch, export_id, settings_json) SELECT ?1, ?2, settings_json FROM sk_batches WHERE batch = ?3').bind('another_batch', hash(bytes), batch).run();
+  await env.DB.prepare("UPDATE sk_active_batch SET batch = 'another_batch'").run();
+  assert.equal((await call('study/session', { token: 'test-token' })).status, 409);
+  await env.DB.prepare('UPDATE sk_active_batch SET batch = ?1').bind(batch).run();
 });
 
 test('viewing settings cannot change once a viewer enrolls', async () => {
-  const key = `videos/studies/${env.SK_EXPORT_ID}/STUDY.json`;
-  const original = await (await env.VIDEOS.get(key)).arrayBuffer();
-  const settings = JSON.parse(new TextDecoder().decode(original)); settings.question = 'A changed question';
-  await env.VIDEOS.put(key, JSON.stringify(settings));
+  const original = (await env.DB.prepare('SELECT settings_json FROM sk_batches WHERE batch = ?1').bind(batch).first()).settings_json;
+  const settings = JSON.parse(original); settings.question = 'A changed question';
+  await env.DB.prepare('UPDATE sk_batches SET settings_json = ?1 WHERE batch = ?2').bind(JSON.stringify(settings), batch).run();
   assert.equal((await call('study/config')).status, 503);
-  await env.VIDEOS.put(key, original);
+  await env.DB.prepare('UPDATE sk_batches SET settings_json = ?1 WHERE batch = ?2').bind(original, batch).run();
   assert.equal((await call('study/config')).status, 200);
 });

@@ -9,42 +9,55 @@
   <link rel="stylesheet" href="study.css">
 </head>
 <body>
-  <div id="app">
-    <div id="topbar">
-      <div id="topbar-left">Human Preference Annotator</div>
-      <div id="topbar-center"><span id="progress"></span></div>
-      <div id="topbar-right"><button id="logoutBtn" onclick="location.replace('/study.html')">Log out</button></div>
+  <main id="stage">
+    <video id="video" playsinline disablepictureinpicture controlslist="nodownload noremoteplayback" hidden></video>
+    <div id="app">
+      <section id="controlsLeft" class="control-panel" aria-label="Left eye controls">
+        <div class="control-content">
+          <div id="topbar" data-ui="topbar">
+            <div id="topbar-left" data-ui="topbar-left">Human Preference Annotator</div>
+            <div id="topbar-center" data-ui="topbar-center"><span id="progress" data-ui="progress"></span></div>
+            <div id="topbar-right" data-ui="topbar-right"><button id="logoutBtn" data-ui="logoutBtn" onclick="location.replace('/study.html')">Log out</button></div>
+          </div>
+          <div class="control-body">
+            <h2 id="question" data-ui="question">Loading study…</h2>
+            <p id="status" data-ui="status" role="status" aria-live="polite">Loading videos…</p>
+            <section id="setup" data-ui="setup" hidden>
+              <p id="setupInstructions" data-ui="setupInstructions"></p>
+              <p><label><input type="checkbox" id="setupConfirmed" data-ui="setupConfirmed"> My setup matches the instructions above.</label></p>
+              <div class="screen-controls">
+                <button id="chooseScreen" data-ui="chooseScreen">Select screen</button>
+                <select id="screens" data-ui="screens" aria-label="Stereo display" hidden></select>
+                <button id="openScreen" data-ui="openScreen">Enter fullscreen</button>
+                <button id="exitFullscreen" data-ui="exitFullscreen" hidden>Exit fullscreen</button>
+              </div>
+            </section>
+            <section id="judgment" data-ui="judgment" hidden>
+              <div id="playbackControls" data-ui="playbackControls">
+                <button id="playA" data-ui="playA" disabled>Play A</button>
+                <button id="playB" data-ui="playB" disabled>Play B</button>
+              </div>
+              <div id="notes" data-ui="notes">
+                <p>Watch A, then B, all the way through. Replay either if you need to.</p>
+                <p>Choose an answer below. It saves automatically.</p>
+                <p>Playback, answers and the next pair stay in this window. Press 1 for A, 2 for B, or Esc to exit fullscreen.</p>
+              </div>
+            </section>
+            <p id="fixture" data-ui="fixture"></p>
+          </div>
+          <div id="buttons" data-ui="buttons" aria-label="Your answer">
+            <button data-choice="A" disabled>Prefer A</button>
+            <button data-choice="B" disabled>Prefer B</button>
+            <button data-choice="tie" disabled>No preference</button>
+            <button data-choice="uncertain" disabled>Not sure</button>
+            <button data-choice="technical_failure" disabled>Video or display problem</button>
+          </div>
+        </div>
+      </section>
+      <section id="controlsRight" class="control-panel" aria-label="Right eye controls"></section>
     </div>
-    <h2 id="question">Loading study…</h2>
-    <p id="status" role="status" aria-live="polite">Loading videos…</p>
-    <section id="setup" hidden>
-      <p id="setupInstructions"></p>
-      <p><label><input type="checkbox" id="setupConfirmed"> My setup matches the instructions above.</label></p>
-      <div class="screen-controls">
-        <button id="chooseScreen">Select screen</button>
-        <select id="screens" aria-label="Stereo display" hidden></select>
-        <button id="openScreen">Open player</button>
-      </div>
-    </section>
-    <section id="judgment" hidden>
-      <div id="playbackControls">
-        <button id="playA" disabled>Play A</button>
-        <button id="playB" disabled>Play B</button>
-      </div>
-      <div id="notes">
-        <p>Watch A, then B, all the way through. Replay either if you need to.</p>
-        <p>Choose an answer below. It saves automatically.</p>
-      </div>
-      <div id="buttons" aria-label="Your answer">
-        <button data-choice="A" disabled>Prefer A</button>
-        <button data-choice="B" disabled>Prefer B</button>
-        <button data-choice="tie" disabled>No preference</button>
-        <button data-choice="uncertain" disabled>Not sure</button>
-        <button data-choice="technical_failure" disabled>Video or display problem</button>
-      </div>
-    </section>
-    <p id="fixture"></p>
-  </div>
+  </main>
+  <script src="study-controls.js"></script>
   <script type="module" src="study.js"></script>
 </body>
 </html>
