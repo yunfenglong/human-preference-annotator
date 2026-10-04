@@ -160,7 +160,7 @@ window.connectStudyDisplay = child => {
   });
   child.document.addEventListener('visibilitychange', () => { if (child.document.hidden) stop(); });
   child.addEventListener('resize', () => {
-    if (!fullscreen() || !trial || !video.videoWidth) return;
+    if (metaQuest || !fullscreen() || !trial || !video.videoWidth) return;
     try { checkGeometry(video); } catch (error) { stop(); status(error.message); }
   });
   child.addEventListener('pagehide', () => { stop(); popup = null; availability(); });
