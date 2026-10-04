@@ -19,7 +19,7 @@ export function validateTasks(manifest) {
     required(task.question_id === manifest.bundle.question_id, 'task question_id must match bundle');
     for (const side of ['A', 'B']) {
       const stimulus = task.stimuli?.[side];
-      required(stimulus?.file === `stimuli/${task.task_id}_${side}.mp4`, 'unexpected stimulus path');
+      required(typeof stimulus?.file === 'string' && new RegExp(`^stimuli/${task.task_id}_${side}(?:_[A-Za-z0-9-]+)*\\.mp4$`).test(stimulus.file), 'unexpected stimulus path');
       required(hex(stimulus.sha256, 64), 'stimulus sha256 required');
     }
     const v = task.video;
@@ -33,12 +33,12 @@ export function validateTasks(manifest) {
 }
 
 // Publish a strict allowlist. Never echo operator metadata into the blind UI.
-export function publicTask(task, exportId) {
+export function publicTask(task, batch) {
   return {
     task_id: task.task_id, clip_id: task.clip_id, question_id: task.question_id,
     video: Object.fromEntries(["layout", "eye_width", "eye_height", "frames", "fps", "duration_s"].map(key => [key, task.video[key]])),
     stimuli: Object.fromEntries(['A', 'B'].map(side => [side, {
-      file: `/videos/studies/${exportId}/${task.stimuli[side].file}`,
+      file: `/videos/batches/${encodeURIComponent(batch)}/${task.stimuli[side].file}`,
       sha256: task.stimuli[side].sha256,
     }])),
   };

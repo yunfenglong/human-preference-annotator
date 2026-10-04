@@ -4,8 +4,9 @@ h2 { margin: 24px 0 12px; font-size: 30px; font-weight: 600; letter-spacing: -.0
 h3 { font-size: 17px; font-weight: 600; margin: 0 0 16px; }
 section { margin: 28px 0; }
 #operations > h3 { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
-input, button { padding: 8px 12px; margin: 4px 0; border: 1px solid var(--line); border-radius: 5px; }
-input:not([type="checkbox"]) { background: var(--paper); color: var(--ink); }
+input, button, select, textarea { padding: 8px 12px; margin: 4px 0; border: 1px solid var(--line); border-radius: 5px; }
+input:not([type="checkbox"]), select, textarea { background: var(--paper); color: var(--ink); }
+textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; }
 button { color: var(--ink); background: transparent; font-size: 13px; }
 button:hover:enabled { background: var(--surface); border-color: var(--muted); }
 button:disabled { opacity: .45; }
@@ -14,6 +15,21 @@ button:disabled { opacity: .45; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .muted { color: var(--muted); font-size: 12px; }
 #identity { overflow-wrap: anywhere; }
+#batchInfo { white-space: pre-line; }
+.dashboard-header { margin-bottom: 32px; }
+.eyebrow { color: var(--accent); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+#dash > section { padding: 24px 0; border-top: 1px solid var(--line); }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.section-heading h3 { margin: 0; }
+.group-summary { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+.group-summary span { padding: 6px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
+.table-scroll { overflow-x: auto; }
+#viewerTable td { vertical-align: top; }
+#viewerTable button, #viewerTable a { margin: 3px 6px 3px 0; display: inline-block; white-space: nowrap; }
+#viewerTable select { max-width: 150px; }
+details { margin: 20px 0; }
+summary { cursor: pointer; font-weight: 500; }
+#legacyTools { border-top: 1px solid var(--line); padding-top: 24px; color: var(--muted); }
 pre { overflow-x: auto; background: var(--surface); padding: 16px; border-radius: 5px; font-size: 12px; }
 table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 th, td { border: 1px solid var(--line); padding: 10px; text-align: left; }

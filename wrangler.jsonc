@@ -7,7 +7,11 @@
   "assets": {
     "directory": "./frontend",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/videos/*", "/healthz"]
+    "run_worker_first": [
+      "/api/*",
+      "/videos/*",
+      "/healthz"
+    ]
   },
   "d1_databases": [
     {
@@ -22,5 +26,21 @@
       "binding": "VIDEOS",
       "bucket_name": "human-preference-videos"
     }
-  ]
+  ],
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "human-preference-annotator-quest-preview",
+        "database_id": "3cb3dc46-3070-4312-8b88-e9da5c137cc9",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "r2_buckets": [
+      {
+        "binding": "VIDEOS",
+        "bucket_name": "human-preference-videos"
+      }
+    ]
+  }
 }

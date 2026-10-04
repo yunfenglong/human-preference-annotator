@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 import { readFile, realpath, mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { validateTasks } from '../shared/sk-contract.js';
+import { validBatch } from '../worker/study-batches.js';
+import { parseRaterAssignment } from '../shared/rater-assignment.js';
 
 // Validate the entire handoff before uploading anything. No private maps are read.
 export async function inspectExport(folder, settingsPath) {
   const root = await realpath(folder);
   const bytes = await readFile(join(root, 'TASKS.json'));
   const manifest = validateTasks(JSON.parse(bytes));
+  let assignmentBytes = null, assignment = null;
+  try { assignmentBytes = await readFile(join(root, 'RATER_ASSIGNMENT.csv')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (assignmentBytes) assignment = parseRaterAssignment(assignmentBytes.toString('utf8'), manifest);
   const settings = JSON.parse(await readFile(settingsPath));
   for (const field of ['question_id', 'display_sha256', 'protocol_sha256']) {
     if (settings[field] !== manifest.bundle[field]) throw new Error(`STUDY.json ${field} must match TASKS.json`);
@@ -39,24 +45,33 @@ export async function inspectExport(folder, settingsPath) {
       files.push({ relative: stimulus.file, path });
     }
   }
-  return { exportId: createHash('sha256').update(bytes).digest('hex'), manifest, settings, bytes, files };
+  return { exportId: createHash('sha256').update(bytes).digest('hex'), manifest, settings, bytes, files, assignmentBytes, assignment };
 }
 
 async function main() {
-  const [folder, settingsPath, ...flags] = process.argv.slice(2);
+  const [folder, settingsPath, ...options] = process.argv.slice(2);
+  const flags = [];
+  let batch;
+  for (let i = 0; i < options.length; i++) {
+    if (options[i] === '--batch' && !batch && options[i + 1]) batch = options[++i];
+    else flags.push(options[i]);
+  }
   if (!folder || !settingsPath || flags.some(f => !['--local', '--remote', '--verify-only'].includes(f)) ||
       flags.filter(f => ['--local', '--remote'].includes(f)).length > 1 ||
       (flags.includes('--verify-only') && flags.some(f => ['--local', '--remote'].includes(f)))) {
-    throw new Error('Usage: node scripts/import_sk_tasks.mjs EXPORT_FOLDER STUDY.json [--verify-only | --local | --remote]');
+    throw new Error('Usage: node scripts/import_sk_tasks.mjs EXPORT_FOLDER STUDY.json [--batch NAME] [--verify-only | --local | --remote]');
   }
+  batch ||= basename(resolve(folder));
+  if (!validBatch(batch)) throw new Error('Use --batch with a valid bucket-root directory name');
   const inspected = await inspectExport(resolve(folder), resolve(settingsPath));
   console.log(`Verified ${inspected.manifest.task_count} tasks (${inspected.manifest.fixture ? 'FIXTURE' : 'real'}), seed ${inspected.manifest.seed}`);
-  console.log(`SK_EXPORT_ID=${inspected.exportId}`);
+  console.log(`Batch: ${batch}; export SHA-256: ${inspected.exportId}`);
+  if (inspected.assignment) console.log('Viewer groups:', inspected.assignment.summary.map(group => `${group.group_id}: ${group.task_count}`).join(', '));
   if (!flags.includes('--local') && !flags.includes('--remote')) return;
   const temporary = await mkdtemp(join(tmpdir(), 'sk-verified-'));
   try {
     const upload = (relative, path, type) => execFileSync('npx', ['--no-install', 'wrangler', 'r2', 'object', 'put',
-      `human-preference-videos/videos/studies/${inspected.exportId}/${relative}`, '--file', path, '--content-type', type,
+      `human-preference-videos/${batch}/${relative}`, '--file', path, '--content-type', type,
       flags.includes('--remote') ? '--remote' : '--local'], { stdio: 'inherit' });
     // Snapshot verified bytes, so a changed source is never uploaded under an old hash.
     for (const file of inspected.files) {
@@ -73,8 +88,13 @@ async function main() {
     await writeFile(settingsFile, JSON.stringify(inspected.settings));
     await writeFile(tasksFile, inspected.bytes);
     upload('STUDY.json', settingsFile, 'application/json');
+    if (inspected.assignmentBytes) {
+      const assignmentFile = join(temporary, 'RATER_ASSIGNMENT.csv');
+      await writeFile(assignmentFile, inspected.assignmentBytes);
+      upload('RATER_ASSIGNMENT.csv', assignmentFile, 'text/csv; charset=utf-8');
+    }
     upload('TASKS.json', tasksFile, 'application/json');
-    console.log('Uploaded verified handoff. Set SK_EXPORT_ID in Worker vars and use fresh pseudonymous viewer IDs.');
+    console.log(`Uploaded verified handoff to ${batch}/. Select and activate this batch in /admin/. Assign each viewer to its group; use fresh pseudonymous viewer IDs for a new export.`);
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });

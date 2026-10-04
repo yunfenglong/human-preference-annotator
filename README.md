@@ -2,9 +2,9 @@
 
 A web tool for collecting blind stereoscopic A/B judgments for pixelMorph’s SK3 preference pipeline. The current entry point is `/study.html` (also reached from `/?token=...`).
 
-See [pixelMorph alignment and handoff](docs/pixelmorph-alignment.md) for verified task import, display requirements, response export and downstream DPO use. Before collection, import a real `TASKS.json` plus untouched `stimuli/`, agree the display protocol and question, and configure `SK_EXPORT_ID`. Collection stays disabled until that handoff is ready.
+See [pixelMorph alignment and handoff](docs/pixelmorph-alignment.md) for verified task import, display requirements, response export and downstream DPO use. Upload a batch containing a real `TASKS.json` plus untouched `stimuli/` directly into `human-preference-videos`, then select the batch, agree its question and viewing setup, and activate it in `/admin/`. Collection stays disabled until a batch is activated.
 
-The previous driving study is available at `/?legacy=1&token=...`; its data and optional surprise/attention steps are kept separate. `/admin/` manages viewer links and legacy data, while `/admin/study.html` delivers SK3 responses.
+The previous driving study is available at `/?legacy=1&token=...`; its data and optional surprise/attention steps are kept separate. `/admin/` manages batches, viewer groups, links and response deliveries, with legacy controls in a collapsed section.
 
 The production target is one Cloudflare Worker:
 
@@ -22,12 +22,11 @@ The Worker expects these exact bindings and secrets:
 | Name | Type | Purpose |
 | --- | --- | --- |
 | `DB` | D1 database | Tokens, annotator progress, repeat queues, and annotations |
-| `VIDEOS` | R2 bucket | Objects keyed exactly like `videos/early_late_mi_training/...mp4` |
+| `VIDEOS` | R2 bucket | Bucket-root batches such as `preference_v1_clean_20261003/TASKS.json` and `preference_v1_clean_20261003/stimuli/...mp4`; legacy objects retain their `videos/...` keys |
 | `ASSETS` | Worker assets | Configured automatically from `frontend/` |
 | `ADMIN_PASSWORD` | Secret | Password entered in `/admin/` |
 | `ADMIN_TOKEN` | Secret | Long random admin session token |
 | `CORS_ORIGIN` | Optional variable | Comma-separated extra frontend origins |
-| `SK_EXPORT_ID` | Variable | SHA-256 of verified SK3 `TASKS.json` |
 
 Cloudflare's products are named **D1** and **R2**. If “D2/R1” was used in discussion, confirm that it means these two services.
 
@@ -43,7 +42,34 @@ npm run dev
 
 After importing the SK3 handoff, open `http://localhost:8787/?token=ffb981fe` for the seeded annotator or `http://localhost:8787/admin/` for the admin dashboard. Local D1 and R2 data live under the ignored `.wrangler/` directory.
 
+In `/admin/`, sign in and choose the batch from the bucket's top-level directories. Supply the agreed question and viewing setup if the batch has no `STUDY.json`, then click **Save setup and activate batch**. D1 persists the selection and settings, so switching batches needs no redeployment. `TASKS.json` hashes continue to isolate responses. The selected batch's listed stimulus files must exist and be nonempty before activation; their hashes are verified again by the playback client. Uploads alone do not change the active batch. Responses for an earlier configured batch can still be downloaded by selecting it without activating it.
+
 `seed.local.sql` contains the three tokens previously committed in `backend/data/tokens.json`. It is deliberately not a migration, so those public development tokens are not inserted into production.
+
+## Viewer groups
+
+Keep `RATER_ASSIGNMENT.csv` in the batch root alongside `TASKS.json`. Its
+`task_id,clip_id,viewer_id` columns map tasks to viewer groups: the CSV's
+`viewer_id` names the assignment group, while each person keeps a separate
+pseudonymous viewer ID in the dashboard and response exports. Select the batch
+in `/admin/`, then select a group when adding a viewer or save a group for an
+existing viewer. This works before batch activation. Every listed task and clip
+must match the manifest, and the assignment must cover the batch.
+
+The dashboard distinguishes the total batch catalogue from each viewer's
+assigned workload. For `preference_v1_clean_20261003`, the total is 245 tasks;
+R1/R3/R4 each have 61 and R2 has 62. Viewers receive only their group's tasks,
+including repeats. Group changes are blocked after the viewer starts a session.
+An unassigned viewer cannot enroll in a batch with an assignment file. Batches
+without the optional CSV retain the full-batch workflow. Assignment hashes are
+pinned at activation; an altered or missing CSV blocks collection. All batch,
+viewer and export controls share the existing `/admin/` dashboard; the previous
+study-admin URL redirects there.
+
+During rollout, a viewer session created before group support can receive its
+first group if it has saved no answers. Its old unanswered trial is invalidated
+and the next request receives a task from the selected group. Existing answers
+are never remapped to another group.
 
 ## One-time Cloudflare setup
 
@@ -87,6 +113,25 @@ The API token needs scoped access to Workers, D1, and R2. CI applies D1 migratio
 
 ### Extended-display playback and optional steps
 
+For the current batch study, confirm the setup and choose the stereo screen,
+then click **Enter fullscreen** or **Play A**. A/B playback, replays and answers
+use this same window. Controls return after each video; submitting an answer
+loads the next pair without navigation or leaving fullscreen. During playback,
+controls are hidden and the SBS frame keeps its native physical resolution.
+The button page has two adjacent 16:9 eye panels with identical content and
+synchronized controls; either side operates the same session.
+`1` plays A, `2` plays B, and Esc exits fullscreen. Run these checks with
+`node --test tests/study-playback.test.mjs`.
+
+On Meta Quest, **Open Quest player** or **Play A** opens the native video
+player. Set its mode to 180° stereoscopic left-right, return to the controls,
+confirm the setup, then replay A and watch B. The initial preview before setup
+confirmation does not count as completed playback. Controls return after each
+video; Quest uses the native video's fullscreen instead of the desktop stage
+and skips desktop display geometry checks. Verify this mode on the headset
+before collecting responses.
+
+The legacy driving study still uses a separate display window:
 Use desktop Chrome with displays in **Extend** mode. Open an annotator link,
 choose the video screen, allow window-management permission, and open the video
 window. Pop-ups must be allowed for this site. In the video window:
@@ -127,7 +172,7 @@ curl -sS -D - -o /dev/null -H 'Range: bytes=0-99' \
   'https://YOUR-WORKER.workers.dev/videos/gold/ego_video.mp4'
 ```
 
-The video request should return `206 Partial Content`. The admin dashboard can then generate fresh pseudonymous viewer links. Use `/admin/study.html` to export SK3 responses and retain the cursor after each successful downstream import.
+The video request should return `206 Partial Content`. The admin dashboard can then generate fresh pseudonymous viewer links. Use `/admin/` to export SK3 responses and retain the cursor after each successful downstream import.
 
 ## Existing MongoDB data
 

@@ -32,10 +32,10 @@ geometry and playback evidence do not satisfy the new contract.
 ## Operator handoff
 
 pixelMorph operators run `export-tasks` and send **only** `TASKS.json`,
-`stimuli/` and optionally `RESPONSES_TEMPLATE.json`. The private assignment,
+`stimuli/`, optionally `RATER_ASSIGNMENT.csv` and `RESPONSES_TEMPLATE.json`. The private assignment,
 release packet, source clips, renderer actions and split information stay with
 pixelMorph. The importer uploads only the explicitly listed stimulus files and
-manifest, never other files in the handoff directory. Do not run old conversion,
+manifest and a validated optional rater-assignment CSV, never private maps or other files in the handoff directory. Do not run old conversion,
 crop or clip-pair scripts on these stimuli.
 
 Before collecting, agree question wording, display device and stereo mode,
@@ -77,16 +77,29 @@ The uploader currently targets the repo's `human-preference-videos` bucket.
 Every file's SHA-256, frame dimensions, decoded frame count and frame rate must
 match. A wrong file stops before upload. A second hash check protects against
 source changes between validation and upload. Uploaded keys are isolated as
-`videos/studies/<export_id>/stimuli/<task>_A.mp4` and `_B.mp4`.
+`<batch>/stimuli/`, directly under the bucket root. The batch defaults to the
+export folder's name; use `--batch preference_v1_clean_20261003` to choose it
+explicitly. Stimulus filenames are preserved, including `_FSBS_LR` suffixes.
 
-The command prints `SK_EXPORT_ID`, the SHA-256 of the original `TASKS.json` bytes.
-Set it in `.dev.vars` for local use and in `wrangler.jsonc`'s `vars` for deployment.
-The Worker verifies the manifest identity and requires matching settings;
-unconfigured collection returns 503. Do not modify settings for an export after
-collecting labels. A changed physical setup requires a new pixelMorph export.
-The settings hash is frozen in D1 when the first viewer enrolls; changing it
-blocks collection until the original settings are restored. The current app supports one active export at a time; finish its response
-deliveries before changing `SK_EXPORT_ID`.
+The command prints the batch name and SHA-256 of the original `TASKS.json` bytes.
+No `SK_EXPORT_ID` Worker variable is required. In `/admin/`, sign in,
+select the batch discovered at the bucket root, review the question and viewing
+setup, and click **Save setup and activate batch**. Batches uploaded separately
+with `TASKS.json` and `stimuli/` work in place; no copy into a prescribed path is
+required. If there is no `STUDY.json`, enter the operator-agreed settings in the
+admin form. Their identity fields come from the manifest. Activation checks that
+all listed stimulus objects exist and are nonempty. The playback client checks
+their SHA-256 before decoding; use the local importer for frame/FPS verification.
+
+D1 persists the active batch, its manifest hash and agreed settings. A changed
+manifest under an existing batch is rejected, so publish changed exports under
+a new batch name. Unconfigured collection returns 503, but admin batch selection
+remains available. The settings hash is frozen in D1 when the first viewer
+enrolls. A changed physical setup requires a new pixelMorph export. The current
+app supports one active batch at a time. Switching takes effect on the next
+request; viewers with sessions for the previous export must reload and use
+viewer IDs appropriate to the new export. Prior batches retain their responses
+and can be selected for download without being reactivated.
 
 Apply the additive D1 migrations, seed local tokens if needed, then run:
 
@@ -97,14 +110,44 @@ npm run dev
 ```
 
 For production, use the existing `db:migrate:remote` and `deploy` commands after
-reviewing the configuration. No deployment or remote migration is performed by
-the implementation task itself.
+reviewing the configuration.
+
+## Viewer assignment
+
+When supplied, `<batch>/RATER_ASSIGNMENT.csv` maps `task_id,clip_id,viewer_id`
+to assignment groups. The CSV's viewer IDs (for example R1–R4) are group labels;
+the dashboard associates each actual pseudonymous viewer ID with one group.
+Do not rename a person's viewer ID to a group label or rewrite A/B assignments.
+The dashboard lets the admin select groups before activation and shows each
+viewer’s completed and assigned primary-task count plus repeats. Session creation
+requires a valid group, and group selection locks at enrollment. Group filtering
+applies to primary tasks, pending-trial reloads and repeats. Response exports
+retain the actual viewer ID in the existing eight-field contract.
+
+The assignment is checked against manifest task/clip identities and complete
+coverage. Its exact bytes are hashed at activation. Modifying or deleting the
+assignment after activation blocks collection instead of serving the full batch.
+A batch without a CSV uses all tasks per viewer. No assignment groups or private
+operator metadata are published to the blind annotator UI.
+
+For sessions created before assignment support, the admin can choose the first
+group only while the viewer has saved no answers. This preserves the session
+but invalidates its old unanswered trial; the next trial comes from the group.
+An existing answered full-batch session cannot be reclassified this way.
 
 ## Playback and trials
 
-The controller opens a separate video window on the selected stereo screen.
-Browsers without screen selection can move that window manually. The viewer
-confirms the agreed setup. Each file is downloaded and hashed before decoding;
+Playback, A/B controls and judgments share one study window. Enter fullscreen
+once on the selected stereo screen; switching A/B, replaying and loading the
+next trial reuse the same fullscreen container and video element without
+navigation or pop-ups. Controls appear between videos and are hidden during
+playback. The controls use two adjacent 16:9 eye panels with identical content,
+button states, form values and scroll positions. Either panel operates the
+same session and submits each answer once. The complete video frame retains
+its existing native SBS geometry outside these mirrored controls.
+Browsers without screen selection can move the study window manually
+before entering fullscreen. The viewer confirms the agreed setup.
+Each file is downloaded and hashed before decoding;
 a failed hash prevents playback. The complete SBS frame is centered at one
 encoded pixel per physical display pixel, preserving aspect, frame rate and
 eye halves. A display too small for that frame is rejected, rather than scaling
@@ -130,12 +173,16 @@ to one export, and the primary uniqueness constraint spans sessions.
 
 Fullscreen and media startup have deadlines and show a retry message. A file
 download also times out rather than counting as complete playback. Closing or
-reopening the video window or reloading the controller retains the pending trial.
+reloading the study window retains the pending trial. A real fullscreen exit
+or a hidden window pauses interrupted playback and restores the controls.
+Run the current playback regression checks with
+`node --test tests/study-playback.test.mjs`; these include A/B replays and
+answer submission followed by the next trial without leaving fullscreen.
 
 ## Delivery and downstream use
 
-Open `/admin/study.html`, sign in with the existing admin credentials, and
-download new responses. The download has only:
+Open `/admin/`, sign in with the existing admin credentials, select
+the batch whose answers you need, and download new responses. The download has only:
 
 ```json
 {

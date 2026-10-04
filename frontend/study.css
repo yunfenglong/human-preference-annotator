@@ -1,18 +1,56 @@
 /* Keep the original tool layout; apply the shared paper-and-ink theme. */
 body { margin: 0; }
+[hidden] { display: none !important; }
+#stage { min-height: 100vh; display: grid; place-items: center; background: #000; }
+#stage:fullscreen {
+  width: 100%; height: 100%; min-height: 0;
+  display: grid; place-items: center;
+  background: #000; overflow: hidden;
+}
+#stage:fullscreen[data-playing="true"] { background: #000; }
+#app {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100vw, calc(100vh * 32 / 9));
+  aspect-ratio: 32 / 9;
+  padding: 0;
+  gap: 0;
+}
+.control-panel {
+  position: relative; min-width: 0; aspect-ratio: 16 / 9;
+  overflow: hidden; background: var(--paper);
+}
+.control-content {
+  position: absolute; inset: 0 auto auto 0;
+  width: 1280px; height: 720px;
+  transform: scale(var(--control-scale, 1)); transform-origin: top left;
+  background: var(--paper);
+}
+.control-body {
+  position: absolute; inset: 64px 0 96px;
+  box-sizing: border-box; padding: 36px 24px 24px; overflow: auto;
+  scrollbar-width: none;
+}
+.control-body::-webkit-scrollbar { display: none; }
+.control-content:has([data-ui="judgment"][hidden]) [data-ui="buttons"] { display: none; }
+#stage > #video { display: block; max-width: none; max-height: none; object-fit: none; }
 
-#topbar {
+#topbar, [data-ui="topbar"] {
+  position: absolute; inset: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
   height: 64px;
   padding: 0 32px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
+  z-index: 1;
 }
 
-#topbar-left { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
-#topbar-center { font-size: 13px; font-variant-numeric: tabular-nums; }
-#progress { font-weight: 500; color: var(--muted); }
+[data-ui="topbar-left"], [data-ui="topbar-center"], [data-ui="topbar-right"] { display: flex; align-items: center; gap: 10px; }
 
-#logoutBtn {
+[data-ui="topbar-left"] { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+[data-ui="topbar-center"] { font-size: 13px; font-variant-numeric: tabular-nums; }
+#progress, [data-ui="progress"] { font-weight: 500; color: var(--muted); }
+
+#logoutBtn, [data-ui="logoutBtn"] {
   font-size: 12px;
   padding: 7px 11px;
   color: var(--ink);
@@ -20,11 +58,12 @@ body { margin: 0; }
   border-radius: 5px;
   background: transparent;
 }
-#logoutBtn:hover { background: var(--surface); border-color: var(--muted); }
+#logoutBtn:hover, [data-ui="logoutBtn"]:hover { background: var(--surface); border-color: var(--muted); }
+#logoutBtn[data-hovered], [data-ui="logoutBtn"][data-hovered] { background: var(--surface); border-color: var(--muted); }
+#topbar-right button, [data-ui="topbar-right"] button { font-size: 12px; padding: 7px 11px; }
+button[data-focused], input[data-focused], select[data-focused] { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-#app { padding: 100px 24px 112px; }
-
-#question {
+[data-ui="question"] {
   font-family: var(--font-sans);
   font-size: clamp(24px, 3vw, 32px);
   line-height: 1.25;
@@ -35,7 +74,7 @@ body { margin: 0; }
   text-wrap: balance;
 }
 
-#status {
+[data-ui="status"] {
   min-height: 1.5em;
   font-size: 13px;
   color: var(--muted);
@@ -44,7 +83,7 @@ body { margin: 0; }
   max-width: 800px;
 }
 
-#setup {
+[data-ui="setup"] {
   max-width: 800px;
   margin: 0 auto;
   padding: 22px 0;
@@ -53,7 +92,7 @@ body { margin: 0; }
   font-size: 13px;
 }
 
-#setupInstructions {
+[data-ui="setupInstructions"] {
   white-space: pre-line;
   font-family: var(--font-serif);
   font-size: 17px;
@@ -62,19 +101,19 @@ body { margin: 0; }
   margin: 0 auto 18px;
 }
 
-#setup label { line-height: 1.6; }
-#setup input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; }
+[data-ui="setup"] label { line-height: 1.6; }
+[data-ui="setup"] input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; }
 
-#setup .screen-controls {
+[data-ui="setup"] .screen-controls {
   justify-content: center;
   align-items: center;
   margin: 18px 0 0;
   gap: 8px;
 }
 
-#setup .screen-controls button,
-#setup .screen-controls select,
-#playbackControls button {
+[data-ui="setup"] .screen-controls button,
+[data-ui="setup"] .screen-controls select,
+[data-ui="playbackControls"] button {
   min-height: 36px;
   padding: 8px 14px;
   border: 1px solid var(--line);
@@ -85,30 +124,34 @@ body { margin: 0; }
   line-height: 1.4;
 }
 
-#setup .screen-controls button:hover:enabled,
-#playbackControls button:hover:enabled { background: var(--surface); border-color: var(--muted); }
+[data-ui="setup"] .screen-controls button:hover:enabled,
+[data-ui="setup"] .screen-controls button[data-hovered]:enabled,
+[data-ui="playbackControls"] button:hover:enabled,
+[data-ui="playbackControls"] button[data-hovered]:enabled { background: var(--surface); border-color: var(--muted); }
 
-#setup #openScreen {
+[data-ui="setup"] [data-ui="openScreen"] {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--paper);
 }
-#setup #openScreen:hover:enabled { background: #35352f; }
+[data-ui="setup"] [data-ui="openScreen"]:hover:enabled,
+[data-ui="setup"] [data-ui="openScreen"][data-hovered]:enabled { background: #35352f; }
 
-#playbackControls {
+[data-ui="playbackControls"] {
   display: flex;
   justify-content: center;
   gap: 10px;
   margin: 24px 0 18px;
 }
-#playbackControls button { min-width: 100px; background: var(--surface); }
+[data-ui="playbackControls"] button { min-width: 100px; background: var(--surface); }
 button:disabled { opacity: .45; }
 
-#notes { text-align: center; padding: 0; margin: 0 auto; max-width: 800px; }
-#notes p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 2px 0; }
-#fixture { color: var(--muted); font-size: 11px; margin: 18px 0 0; }
+#notes, [data-ui="notes"] { text-align: center; padding: 0; margin: 0 auto; max-width: 800px; }
+#notes p, [data-ui="notes"] p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 2px 0; }
+[data-ui="fixture"] { color: var(--muted); font-size: 11px; margin: 18px 0 0; }
 
-#buttons {
+#buttons, [data-ui="buttons"] {
+  position: absolute; inset: auto 0 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
   height: auto;
   min-height: 80px;
   flex-wrap: wrap;
@@ -117,9 +160,11 @@ button:disabled { opacity: .45; }
   background: var(--paper);
   border-top: 1px solid var(--line);
   backdrop-filter: none;
+  z-index: 1;
 }
 
-#buttons button {
+#buttons button, [data-ui="buttons"] button {
+  margin: 0;
   min-height: 38px;
   padding: 9px 14px;
   border: 1px solid var(--line);
@@ -129,20 +174,11 @@ button:disabled { opacity: .45; }
   font-size: 13px;
   line-height: 1.4;
 }
-#buttons button:hover:enabled { background: var(--surface); border-color: var(--muted); }
-#buttons button[data-choice="A"],
-#buttons button[data-choice="B"] { color: var(--paper); background: var(--ink); border-color: var(--ink); min-width: 104px; }
-#buttons button[data-choice="A"]:hover:enabled,
-#buttons button[data-choice="B"]:hover:enabled { background: #35352f; }
-
-@media (max-width: 650px) {
-  #topbar { padding: 0 16px; gap: 8px; height: 60px; }
-  #topbar-left { max-width: 150px; font-size: 13px; }
-  #topbar-center { margin-left: auto; }
-  #topbar-right { margin-left: 6px; }
-  #topbar-right #logoutBtn { font-size: 11px; padding: 6px 8px; }
-  #app { padding: 88px 20px 210px; }
-  #setupInstructions { font-size: 16px; }
-  #buttons { padding: 12px; gap: 8px; }
-  #buttons button { font-size: 12px; padding: 9px 12px; }
-}
+#buttons button:hover:enabled, [data-ui="buttons"] button:hover:enabled { background: var(--surface); border-color: var(--muted); }
+#buttons button[data-hovered]:enabled, [data-ui="buttons"] button[data-hovered]:enabled { background: var(--surface); border-color: var(--muted); }
+#buttons button[data-choice="A"], [data-ui="buttons"] button[data-choice="A"],
+#buttons button[data-choice="B"], [data-ui="buttons"] button[data-choice="B"] { color: var(--paper); background: var(--ink); border-color: var(--ink); min-width: 104px; }
+#buttons button[data-choice="A"]:hover:enabled, [data-ui="buttons"] button[data-choice="A"]:hover:enabled,
+#buttons button[data-choice="A"][data-hovered]:enabled, [data-ui="buttons"] button[data-choice="A"][data-hovered]:enabled,
+#buttons button[data-choice="B"]:hover:enabled, [data-ui="buttons"] button[data-choice="B"]:hover:enabled,
+#buttons button[data-choice="B"][data-hovered]:enabled, [data-ui="buttons"] button[data-choice="B"][data-hovered]:enabled { background: #35352f; }

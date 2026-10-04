@@ -31,6 +31,18 @@ test('blind task serialization preserves A/B and removes private metadata', () =
   assert.ok(result.stimuli.A.file.endsWith('_A.mp4'));
   assert.equal(result.parameters, undefined); assert.equal(result.video.source, undefined);
 });
+test('exported FSBS filenames are preserved, with traversal and wrong-side references rejected', () => {
+  const m = manifest();
+  for (const side of ['A', 'B']) m.tasks[0].stimuli[side].file = `stimuli/${task.task_id}_${side}_FSBS_LR.mp4`;
+  assert.doesNotThrow(() => validateTasks(m));
+  assert.equal(publicTask(m.tasks[0], 'preference_v1_clean_20261003').stimuli.A.file,
+    `/videos/batches/preference_v1_clean_20261003/stimuli/${task.task_id}_A_FSBS_LR.mp4`);
+  for (const file of [`stimuli/${task.task_id}_B_FSBS_LR.mp4`, `stimuli/../${task.task_id}_A.mp4`,
+    `stimuli/${task.task_id}_A.mp4?other=1`, `stimuli/${task.task_id}_A/extra.mp4`]) {
+    const invalid = structuredClone(m); invalid.tasks[0].stimuli.A.file = file;
+    assert.throws(() => validateTasks(invalid), /unexpected stimulus path/);
+  }
+});
 test('incomplete preferences rejected; uncertainty and technical failure are retained', () => {
   for (const choice of ['A', 'B', 'tie']) { assert.throws(() => validateChoice(choice, false)); assert.doesNotThrow(() => validateChoice(choice, true)); }
   for (const choice of ['uncertain', 'technical_failure']) assert.doesNotThrow(() => validateChoice(choice, false));
