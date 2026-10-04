@@ -5,6 +5,7 @@ const stage = $('stage'), video = $('video');
 let config, sessionId, trial, screenDetails, selectedScreen;
 let urls = {}, complete = { A: false, B: false }, busy = false, ready = false, run = null;
 let generation = 0, playbackGeneration = 0, fullscreenPending = false, xrSession = null;
+const matchedQuestFrameRateSessions = new WeakSet();
 const status = message => { $('status').textContent = message; window.studyControls?.sync(); };
 const deadline = (promise, message, milliseconds = 15000) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(message)), milliseconds);
@@ -56,8 +57,35 @@ function watchQuestSession(session) {
     availability();
   }, { once: true });
 }
+function parseFrameRate(value) {
+  const [numerator, denominator = 1] = String(value ?? '').trim().split('/').map(Number);
+  const rate = numerator / denominator;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+function chooseQuestFrameRate(supportedFrameRates, sourceFrameRate) {
+  const fps = parseFrameRate(sourceFrameRate);
+  if (!fps) return null;
+  const rates = Array.from(supportedFrameRates || [], Number).filter(rate => Number.isFinite(rate) && rate > 0);
+  if (!rates.length) return null;
+  return rates.sort((a, b) => {
+    const aError = Math.abs(a / fps - Math.round(a / fps));
+    const bError = Math.abs(b / fps - Math.round(b / fps));
+    return Math.abs(aError - bError) > 1e-6 ? aError - bError : a - b;
+  })[0];
+}
+async function matchQuestFrameRate(session) {
+  if (typeof session.updateTargetFrameRate !== 'function') return;
+  const target = chooseQuestFrameRate(session.supportedFrameRates, trial?.task?.video?.fps);
+  if (target === null || Math.abs((session.frameRate ?? -1) - target) < 0.01) return;
+  try { await session.updateTargetFrameRate(target); } catch (_) { /* Keep the headset default when rate changes are unavailable. */ }
+}
 function renderQuestFrame(_time, frame) {
-  if (xrSession === frame.session) frame.session.requestAnimationFrame(renderQuestFrame);
+  if (xrSession !== frame.session) return;
+  frame.session.requestAnimationFrame(renderQuestFrame);
+  if (!matchedQuestFrameRateSessions.has(frame.session)) {
+    matchedQuestFrameRateSessions.add(frame.session);
+    matchQuestFrameRate(frame.session);
+  }
 }
 async function enterFullscreen(metadata) {
   if (fullscreen()) return;

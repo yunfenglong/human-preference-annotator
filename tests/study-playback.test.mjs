@@ -9,7 +9,7 @@ class Node extends EventTarget {
   removeAttribute(name) { delete this[name]; }
 }
 const flush = async () => { for(let i=0;i<8;i++) await new Promise(setImmediate); };
-async function fixture({ setup=true, fits=true, quest=false }={}) {
+async function fixture({ setup=true, fits=true, quest=false, fps='24', questFrameRateApi=true }={}) {
   const nodes=Object.fromEntries(['stage','video','app','status','playA','playB','setupConfirmed','progress','judgment','chooseScreen','screens','openScreen','exitFullscreen','question','setupInstructions','fixture','setup'].map(id=>[id,new Node()]));
   nodes.setupConfirmed.checked=setup;
   const choices=['A','B','tie','uncertain','technical_failure'].map(choice=>{const node=new Node();node.dataset.choice=choice;return node;});
@@ -27,7 +27,7 @@ async function fixture({ setup=true, fits=true, quest=false }={}) {
   const bytes=new Uint8Array([1,2,3]);
   const sha256=Buffer.from(await webcrypto.subtle.digest('SHA-256',bytes)).toString('hex');
   let nextCalls=0;
-  const fetch=async path=>({ok:true,json:async()=>path.endsWith('config')?{question:'Fixture',setup_instructions:'Confirm setup'}:path.endsWith('session')?{session_id:'s1'}:path.endsWith('respond')?{}:{trial_id:`t${++nextCalls}`,progress:{completed:nextCalls-1,total:2},task:{video:{eye_width:320,eye_height:180},stimuli:{A:{file:'/A.mp4',sha256},B:{file:'/B.mp4',sha256}}}},arrayBuffer:async()=>bytes.buffer});
+  const fetch=async path=>({ok:true,json:async()=>path.endsWith('config')?{question:'Fixture',setup_instructions:'Confirm setup'}:path.endsWith('session')?{session_id:'s1'}:path.endsWith('respond')?{}:{trial_id:`t${++nextCalls}`,progress:{completed:nextCalls-1,total:2},task:{video:{eye_width:320,eye_height:180,fps},stimuli:{A:{file:'/A.mp4',sha256},B:{file:'/B.mp4',sha256}}}},arrayBuffer:async()=>bytes.buffer});
   const navigator={userAgent:quest?'Mozilla/5.0 (Linux; Android; Quest 3) OculusBrowser/40.0':'Mozilla/5.0 Chrome/140.0'};
   if (quest) {
     navigator.xr={requestSession:async(mode,options)=>{
@@ -36,6 +36,11 @@ async function fixture({ setup=true, fits=true, quest=false }={}) {
       session.requestReferenceSpace=async type=>({type});
       session.updateRenderState=state=>{window.xrRenderState=state;};
       session.requestAnimationFrame=callback=>{window.xrFrameRequests=(window.xrFrameRequests||0)+1;window.xrFrameCallback=callback;};
+      if (questFrameRateApi) {
+        session.frameRate=90;
+        session.supportedFrameRates=new Float32Array([72,80,90,120]);
+        session.updateTargetFrameRate=async rate=>{window.xrTargetFrameRates=(window.xrTargetFrameRates||[]).concat(rate);session.frameRate=rate;};
+      }
       session.end=async()=>session.dispatchEvent(new Event('end'));
       window.xrSession=session;
       return session;
@@ -170,9 +175,28 @@ test('Quest creates an automatic 180-degree left-right WebXR media layer',async(
   assert.equal(window.xrLayerOptions.lowerVerticalAngle,-Math.PI/2);
   assert.equal(window.xrFrameRequests,1);
   window.xrFrameCallback(0,{session:window.xrSession});
+  await flush();
   assert.equal(window.xrFrameRequests,2);
+  assert.deepEqual(window.xrTargetFrameRates,[72]);
   assert.equal(video.controls,false);
   assert.equal(video.paused,false);
+});
+
+test('Quest chooses one supported refresh rate from each video frame rate',async()=>{
+  const {context}=await fixture({quest:true});
+  const choose=source=>vm.runInContext(`chooseQuestFrameRate([72, 80, 90, 100, 120], ${JSON.stringify(source)})`,context);
+  assert.equal(choose('24'),72);
+  assert.equal(choose('30'),90);
+  assert.equal(choose('60'),120);
+  assert.equal(choose('30000/1001'),90);
+  assert.equal(choose('25'),100);
+});
+
+test('Quest keeps its default refresh rate when the frame-rate API is unavailable',async()=>{
+  const {nodes,window}=await fixture({quest:true,questFrameRateApi:false});
+  await nodes.playA.onclick(); await flush();
+  window.xrFrameCallback(0,{session:window.xrSession}); await flush();
+  assert.equal(window.xrTargetFrameRates,undefined);
 });
 
 test('Quest completes A and B, restores controls and saves the next trial',async()=>{
